@@ -150,6 +150,12 @@
   <dependencies>
 
     <dependency>
+      <artifactId>blueflood-kafka</artifactId>
+      <groupId>com.rackspacecloud</groupId>
+      <version>${blueflood.version}</version>
+    </dependency>
+
+    <dependency>
       <groupId>com.netflix.astyanax</groupId>
       <artifactId>astyanax-core</artifactId>
       <version>1.56.34</version>

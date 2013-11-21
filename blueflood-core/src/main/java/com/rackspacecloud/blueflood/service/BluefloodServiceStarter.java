@@ -16,6 +16,10 @@
 
 package com.rackspacecloud.blueflood.service;
 
+
+import com.rackspacecloud.blueflood.KafkaProducer.KafkaProducerServiceStarter;
+import com.rackspacecloud.blueflood.eventemitter.RollupEventEmitter;
+import com.rackspacecloud.blueflood.rollup.Granularity;
 import com.rackspacecloud.blueflood.utils.RestartGauge;
 import com.rackspacecloud.blueflood.utils.Util;
 import com.yammer.metrics.core.Gauge;
@@ -201,6 +205,15 @@ public class BluefloodServiceStarter {
         }
     }
 
+    private static void startKafkaProduction() {
+        //Create a listener per granularity
+        for(Granularity granularity : Granularity.granularities()) {
+          final KafkaProducerServiceStarter kafkaService = new KafkaProducerServiceStarter(RollupEventEmitter.getEmitterInstance(), granularity.name());
+          kafkaService.startKafkaProduction();
+        }
+    }
+
+
     public static void main(String args[]) {
         // load configuration.
         Configuration config = Configuration.getInstance();
@@ -231,6 +244,11 @@ public class BluefloodServiceStarter {
                 new ScheduleContext(System.currentTimeMillis(), shards) :
                 new ScheduleContext(System.currentTimeMillis(), shards, zkCluster);
 
+        //Start Kafka Production if flag has been set.This can be generalised, but going with this for a start
+        if(config.getBooleanProperty(CoreConfig.EXPORT_ROLLUPS_TO_KAFKA)) {
+           startKafkaProduction();
+        }
+
         log.info("Starting blueflood services");
         startShardStateServices(rollupContext);
         startIngestServices(rollupContext);
@@ -238,4 +256,8 @@ public class BluefloodServiceStarter {
         startRollupService(rollupContext);
         log.info("All blueflood services started");
     }
+
+
+
+
 }

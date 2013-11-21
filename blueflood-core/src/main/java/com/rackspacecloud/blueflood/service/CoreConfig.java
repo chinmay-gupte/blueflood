@@ -80,7 +80,9 @@ public enum CoreConfig implements ConfigDefaults {
 
     // v1.0 defaults to ','. This configuration option provides backwards compatibility.
     // Using legacy separators is deprecated as of 2.0 and will be removed in 3.0
-    USE_LEGACY_METRIC_SEPARATOR("false");
+    USE_LEGACY_METRIC_SEPARATOR("false"),
+
+    EXPORT_ROLLUPS_TO_KAFKA("true");
 
     static {
         Configuration.getInstance().loadDefaults(CoreConfig.values());

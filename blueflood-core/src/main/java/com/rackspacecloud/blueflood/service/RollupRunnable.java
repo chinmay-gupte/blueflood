@@ -16,6 +16,7 @@
 
 package com.rackspacecloud.blueflood.service;
 
+import com.rackspacecloud.blueflood.eventemitter.RollupEventEmitter;
 import com.rackspacecloud.blueflood.io.AstyanaxIO;
 import com.rackspacecloud.blueflood.io.AstyanaxReader;
 import com.rackspacecloud.blueflood.io.AstyanaxWriter;
@@ -56,13 +57,13 @@ class RollupRunnable implements Runnable {
 
         rollupContext.getWaitHist().update(System.currentTimeMillis() - startWait);
         TimerContext timerContext = rollupContext.getExecuteTimer().time();
+        Granularity gran;
         try {
             TimerContext calcrollupContext = calcTimer.time();
-
             // Read data and compute rollup
             Rollup rollup;
             try {
-                Granularity gran = AstyanaxIO.getCFToGranularityMapper().get(rollupContext.getSourceColumnFamily());
+                gran = AstyanaxIO.getCFToGranularityMapper().get(rollupContext.getSourceColumnFamily());
                 if (gran == Granularity.FULL) {
                     Points<SimpleNumber> input = AstyanaxReader.getInstance().getSimpleDataToRoll(
                             rollupContext.getLocator(),
@@ -74,6 +75,7 @@ class RollupRunnable implements Runnable {
                             rollupContext.getRange(),
                             rollupContext.getSourceColumnFamily());
                     rollup = Rollup.BasicFromBasic.compute(input);
+
                 }
             } finally {
                 calcrollupContext.stop();
@@ -87,8 +89,10 @@ class RollupRunnable implements Runnable {
             } finally {
                 writerollupContext.stop();
             }
-
             RollupService.lastRollupTime.set(System.currentTimeMillis());
+
+            //Emit a rollup event to eventemitter
+            RollupEventEmitter.emitAsJSON(gran.name(), rollupContext.getLocator(), rollup, AstyanaxReader.getUnitString(rollupContext.getLocator()));
         } catch (Throwable th) {
             log.error("BasicRollup failed; Locator : ", rollupContext.getLocator()
                     + ", Source CF: " + rollupContext.getSourceColumnFamily()

@@ -110,7 +110,7 @@ public class Range {
         HashMap<Range, Iterable<Range>> rangeMap = new HashMap<Range, Iterable<Range>>();
         //Start from the snapped start time of coarser granularity
         long tempStartMillis = snappedStartMillis;
-        //Number of slots in coarser granularity
+        //Number of millis in coarser granularity
         int numberOfMillis = g.coarser().milliseconds();
         while(tempStartMillis <= snappedStopMillis-numberOfMillis) {
             rangeMap.put(new Range(tempStartMillis, tempStartMillis+numberOfMillis), new IntervalRangeIterator(g, tempStartMillis, tempStartMillis+numberOfMillis));

@@ -112,7 +112,7 @@ public class Range {
         long tempStartMillis = snappedStartMillis;
         //Number of millis in coarser granularity
         int numberOfMillis = g.coarser().milliseconds();
-        while(tempStartMillis <= snappedStopMillis-numberOfMillis) {
+        while(tempStartMillis <= (snappedStopMillis-numberOfMillis)) {
             rangeMap.put(new Range(tempStartMillis, tempStartMillis+numberOfMillis), new IntervalRangeIterator(g, tempStartMillis, tempStartMillis+numberOfMillis));
             tempStartMillis = tempStartMillis + numberOfMillis;
         }

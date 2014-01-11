@@ -20,7 +20,9 @@ import com.rackspacecloud.blueflood.exceptions.GranularityException;
 import com.rackspacecloud.blueflood.rollup.Granularity;
 
 import java.util.Arrays;
+import java.util.HashMap;
 import java.util.Iterator;
+import java.util.Map;
 
 // typed pair tuple.
 public class Range {
@@ -86,7 +88,36 @@ public class Range {
 
         return new IntervalRangeIterator(g, snappedStartMillis, snappedStopMillis);
     }
-    
+
+    /**
+     * Returns a mapping of ranges in the coarser granularity to the ranges in source granularity
+     *
+     * Here is an example: Given start/end (s,e), we need to return mapping between ranges in Y that will be mapped to
+     * a single range in X. From the example above, it will be mapping from A to all the subranges in Y that get rolled
+     * to a single point in A
+     * @param g
+     * @param startMillis
+     * @param stopMillis
+     * @return
+     * @throws GranularityException
+     */
+    public static Map<Range, Iterable<Range>> mapCoarserRanges(Granularity g, final long startMillis,
+                                                     final long stopMillis) throws GranularityException {
+
+        final long snappedStartMillis = g.coarser().snapMillis(startMillis);
+        final long snappedStopMillis = g.coarser().snapMillis(stopMillis + g.coarser().milliseconds());
+
+        HashMap<Range, Iterable<Range>> rangeMap = new HashMap<Range, Iterable<Range>>();
+        //Start from the snapped start time of coarser granularity
+        long tempStartMillis = snappedStartMillis;
+        //Number of slots in coarser granularity
+        int numberOfMillis = g.coarser().milliseconds();
+        while(tempStartMillis <= snappedStopMillis-numberOfMillis) {
+            rangeMap.put(new Range(tempStartMillis, tempStartMillis+numberOfMillis), new IntervalRangeIterator(g, tempStartMillis, tempStartMillis+numberOfMillis));
+            tempStartMillis = tempStartMillis + numberOfMillis;
+        }
+        return rangeMap;
+    }
     /** return the Ranges for an interval at this granularity
      * @param from start time
      * @param to end time

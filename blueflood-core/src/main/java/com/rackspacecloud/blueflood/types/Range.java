@@ -103,7 +103,7 @@ public class Range {
      */
     public static Map<Range, Iterable<Range>> mapCoarserRanges(Granularity g, final long startMillis,
                                                      final long stopMillis) throws GranularityException {
-
+        //Snap the start and stop times for coarser granularity
         final long snappedStartMillis = g.coarser().snapMillis(startMillis);
         final long snappedStopMillis = g.coarser().snapMillis(stopMillis + g.coarser().milliseconds());
 
@@ -118,6 +118,7 @@ public class Range {
         }
         return rangeMap;
     }
+
     /** return the Ranges for an interval at this granularity
      * @param from start time
      * @param to end time

@@ -96,28 +96,41 @@ public class Range {
      * a single range in X. From the example above, it will be mapping from A to all the sub-ranges in Y that get rolled
      * to a single point in A
      * @param g
-     * @param startMillis
-     * @param stopMillis
+     * @param range
      * @return
      * @throws GranularityException
      */
-    public static Map<Range, Iterable<Range>> mapCoarserRanges(Granularity g, final long startMillis,
-                                                     final long stopMillis) throws GranularityException {
-        if(startMillis >= stopMillis)
+    public static Map<Range, Iterable<Range>> mapCoarserRanges(Granularity g, Range range) throws GranularityException {
+        if(range.getStart() >= range.getStop())
             throw new IllegalArgumentException("start cannot be greater than end");
         //Snap the start and stop times for coarser granularity
-        final long snappedStartMillis = g.coarser().snapMillis(startMillis);
-        final long snappedStopMillis = g.coarser().snapMillis(stopMillis + g.coarser().milliseconds());
+        final long snappedStartMillis = g.snapMillis(range.getStart());
+        final long snappedStopMillis = g.snapMillis(range.getStop() + g.milliseconds());
         HashMap<Range, Iterable<Range>> rangeMap = new HashMap<Range, Iterable<Range>>();
         //Start from the snapped start time of coarser granularity
         long tempStartMillis = snappedStartMillis;
         //Number of millis in coarser granularity
-        int numberOfMillis = g.coarser().milliseconds();
+        int numberOfMillis = g.milliseconds();
         while(tempStartMillis <= (snappedStopMillis-numberOfMillis)) {
-            rangeMap.put(new Range(tempStartMillis, tempStartMillis+numberOfMillis), new IntervalRangeIterator(g, tempStartMillis, tempStartMillis+numberOfMillis));
+            Range slot = new Range(tempStartMillis, tempStartMillis+numberOfMillis);
+            rangeMap.put(slot, getFinerSlots(g, slot));
             tempStartMillis = tempStartMillis + numberOfMillis;
         }
         return rangeMap;
+    }
+
+    /**
+     * Returns an iterable of sub-slots that get rolled up into the supplied slot
+     * @param g
+     * @param slot
+     * @return
+     * @throws GranularityException
+     */
+
+    public static Iterable<Range> getFinerSlots(Granularity g, Range slot) throws GranularityException {
+        if(slot.getStart() != g.snapMillis(slot.getStart()) || slot.getStop() != g.snapMillis(slot.getStop()))
+            throw new IllegalArgumentException("Supplied range does not map to slot in this granularity");
+        return new IntervalRangeIterator(g.finer(), slot.start, slot.stop);
     }
 
     /** return the Ranges for an interval at this granularity

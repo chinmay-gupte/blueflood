@@ -100,7 +100,7 @@ public class Range {
      * @return
      * @throws GranularityException
      */
-    public static Map<Range, Iterable<Range>> mapCoarserRanges(Granularity g, Range range) throws GranularityException {
+    public static Map<Range, Iterable<Range>> mapFinerRanges(Granularity g, Range range) throws GranularityException {
         if(range.getStart() >= range.getStop())
             throw new IllegalArgumentException("start cannot be greater than end");
         //Snap the start and stop times for coarser granularity

@@ -93,12 +93,12 @@ public class SlotTest {
     }
 
     @Test
-    public void testRangeMapper20m() throws Exception {
+    public void testRangeMapper60m() throws Exception {
         int baseMillis = 6500000;
         int hrs = 10;
         int endMillis = baseMillis + 3600000 * hrs;
         //Map of every 60m(coarser gran) in this time range, mapped to iterable of 20m sub-ranges that get rolled up
-        HashMap<Range, Iterable<Range>> retMap = (HashMap<Range, Iterable<Range>>) Range.mapCoarserRanges(Granularity.MIN_60, new Range(baseMillis, endMillis));
+        HashMap<Range, Iterable<Range>> retMap = (HashMap<Range, Iterable<Range>>) Range.mapFinerRanges(Granularity.MIN_60, new Range(baseMillis, endMillis));
         Assert.assertEquals(retMap.entrySet().size(), 11);
         for(Map.Entry<Range,Iterable<Range>> entry : retMap.entrySet()) {
             Range coarserSubRange = entry.getKey();

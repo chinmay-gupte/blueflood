@@ -101,8 +101,10 @@ public class Range {
      * @throws GranularityException
      */
     public static Map<Range, Iterable<Range>> mapFinerRanges(Granularity g, Range range) throws GranularityException {
+
         if(range.getStart() >= range.getStop())
             throw new IllegalArgumentException("start cannot be greater than end");
+
         //Snap the start and stop times for coarser granularity
         final long snappedStartMillis = g.snapMillis(range.getStart());
         final long snappedStopMillis = g.snapMillis(range.getStop() + g.milliseconds());
@@ -111,26 +113,28 @@ public class Range {
         long tempStartMillis = snappedStartMillis;
         //Number of millis in coarser granularity
         int numberOfMillis = g.milliseconds();
+
         while(tempStartMillis <= (snappedStopMillis-numberOfMillis)) {
             Range slot = new Range(tempStartMillis, tempStartMillis+numberOfMillis);
-            rangeMap.put(slot, getFinerSlots(g, slot));
+            rangeMap.put(slot, getSubRanges(g, slot));
             tempStartMillis = tempStartMillis + numberOfMillis;
         }
+
         return rangeMap;
     }
 
     /**
-     * Returns an iterable of sub-slots that get rolled up into the supplied slot
+     * Returns an iterable of sub-ranges that get rolled up into the supplied range
      * @param g
-     * @param slot
+     * @param range
      * @return
      * @throws GranularityException
      */
 
-    public static Iterable<Range> getFinerSlots(Granularity g, Range slot) throws GranularityException {
-        if(slot.getStart() != g.snapMillis(slot.getStart()) || slot.getStop() != g.snapMillis(slot.getStop()))
+    public static Iterable<Range> getSubRanges(Granularity g, Range range) throws GranularityException {
+        if(range.getStart() != g.snapMillis(range.getStart()) || range.getStop() != g.snapMillis(range.getStop()))
             throw new IllegalArgumentException("Supplied range does not map to slot in this granularity");
-        return new IntervalRangeIterator(g.finer(), slot.start, slot.stop);
+        return new IntervalRangeIterator(g.finer(), range.start, range.stop);
     }
 
     /** return the Ranges for an interval at this granularity

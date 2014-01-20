@@ -115,26 +115,12 @@ public class Range {
         int numberOfMillis = g.milliseconds();
 
         while(tempStartMillis <= (snappedStopMillis-numberOfMillis)) {
-            Range slot = new Range(tempStartMillis, tempStartMillis+numberOfMillis);
-            rangeMap.put(slot, getSubRanges(g, slot));
+            Range slotRange = new Range(tempStartMillis, tempStartMillis+numberOfMillis);
+            rangeMap.put(slotRange, new IntervalRangeIterator(g.finer(), slotRange.start, slotRange.stop));
             tempStartMillis = tempStartMillis + numberOfMillis;
         }
 
         return rangeMap;
-    }
-
-    /**
-     * Returns an iterable of sub-ranges that get rolled up into the supplied range
-     * @param g
-     * @param range
-     * @return
-     * @throws GranularityException
-     */
-
-    public static Iterable<Range> getSubRanges(Granularity g, Range range) throws GranularityException {
-        if(range.getStart() != g.snapMillis(range.getStart()) || range.getStop() != g.snapMillis(range.getStop()))
-            throw new IllegalArgumentException("Supplied range does not map to slot in this granularity");
-        return new IntervalRangeIterator(g.finer(), range.start, range.stop);
     }
 
     /** return the Ranges for an interval at this granularity

@@ -125,10 +125,10 @@ def print_stats_for_metrics_state(metrics_state_for_shards):
 	    avg_output[resolution] = float(sum(across_shards_avg_delay))/len(across_shards_avg_delay)
 
     for resol, delay in max_output.items():
-        print 'metric %s float %f slots' % ('_'.join([resol, 'delay']), delay)
+        print 'metric %s float %f slots' % ('_'.join([resol, 'max_delay']), delay)
 
     for resol, delay in avg_output.items():
-        print 'Average delay for resolution %s is %i slots' % (resol, delay)
+        print 'metric %s float %f slots' % ('_'.join([resol, 'avg_delay']), delay)
 
 
 def main(servers):

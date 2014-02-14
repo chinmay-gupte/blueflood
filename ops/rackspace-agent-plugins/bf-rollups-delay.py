@@ -121,7 +121,7 @@ def print_stats_for_metrics_state(metrics_state_for_shards):
             avg_delay_per_shard_per_gran = _get_average(delayed_slots_list)
             across_shards_avg_delay.append(avg_delay_per_shard_per_gran)
             # print 'Shard %s has %i delayed slots for granularity %s' %
-            #                    (shard, delayed_slots_list, resolution)
+            #                (shard, avg_delay_per_shard_per_gran, resolution)
 
         if (len(across_shards_most_delay)):
             max_output[resolution] = max(across_shards_most_delay)

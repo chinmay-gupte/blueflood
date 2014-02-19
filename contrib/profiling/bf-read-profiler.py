@@ -100,10 +100,10 @@ def query_each_locator(locators):
             if std_err:
               raise RuntimeError(std_err)
 
-            WTF_is_timing = _parse_timing(std_out)
+            query_timing = _parse_timing(std_out)
             
-            if WTF_is_timing:
-                stats_per_locator[locator] = WTF_is_timing
+            if query_timing:
+                stats_per_locator[locator] = query_timing
 
     return stats_per_locator
 
@@ -159,6 +159,7 @@ def main(servers, shard):
     except Exception, ex:
         logging.exception(ex)
         print "Error while profiling reads", ex
+
 
 if __name__ == "__main__":
     main(sys.argv[1], sys.argv[2])

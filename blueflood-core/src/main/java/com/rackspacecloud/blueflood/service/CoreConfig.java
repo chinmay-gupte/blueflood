@@ -93,7 +93,10 @@ public enum CoreConfig implements ConfigDefaults {
     // Assume, for calculating granularity for GetByPoints queries, that data is sent at this interval.
     GET_BY_POINTS_ASSUME_INTERVAL("30000"),
     // valid options are: GEOMETRIC, LINEAR, and LESSTHANEQUAL
-    GET_BY_POINTS_GRANULARITY_SELECTION("GEOMETRIC");
+    GET_BY_POINTS_GRANULARITY_SELECTION("GEOMETRIC"),
+
+    //Catch period in hours
+    CATCH_PERIOD("1");
 
     static {
         Configuration.getInstance().loadDefaults(CoreConfig.values());

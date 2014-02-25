@@ -68,7 +68,7 @@ public class Metrics {
                     .forRegistry(registry)
                     .convertDurationsTo(TimeUnit.MILLISECONDS)
                     .convertRatesTo(TimeUnit.SECONDS)
-                    .prefixedWith(config.getStringProperty(CoreConfig.GRAPHITE_PREFIX))
+                    .prefixedWith(config.getStringProperty(CoreConfig.GRAPHITE_PREFIX) + "rollupBackFiller.")
                     .build(graphite);
 
             reporter.start(30l, TimeUnit.SECONDS);

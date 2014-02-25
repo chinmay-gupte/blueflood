@@ -49,22 +49,21 @@ public class ManualRollup extends AstyanaxIO {
     }
 
     public void startManualRollup() {
-        System.out.println("Logging all (" + columnFamiliesEnabled.size() + ") columnfamilies that we will manually rollup FROM: " + START_MILLIS + "\tTO:" + STOP_MILLIS);
-        System.out.println("Logging all (" + columnFamiliesEnabled.size() + ") columnfamilies that we will manually rollup FROM: " + START_MILLIS + "\tTO:" + STOP_MILLIS);
+        log.info("Logging all (" + columnFamiliesEnabled.size() + ") columnfamilies that we will manually rollup FROM: " + START_MILLIS + "\tTO:" + STOP_MILLIS);
         for (ColumnFamily columnFamily : columnFamiliesEnabled) {
-            System.out.println("\t~\tWILL manually rollup " + columnFamily.getName());
+            log.info("\t~\tWILL manually rollup " + columnFamily.getName());
         }
         for (ColumnFamily<Locator, Long> columnFamily : columnFamiliesEnabled) {
-            System.out.println("\t~\t~\tSTARTING to manually rollup " + columnFamily.getName());
+            log.info("\t~\t~\tSTARTING to manually rollup " + columnFamily.getName());
             rollupCf(columnFamily);
-            System.out.println("\t~\t~\tFinished rolling up " + columnFamily.getName());
+            log.info("\t~\t~\tFinished rolling up " + columnFamily.getName());
         }
-        System.out.println("\t~\tCompleted");
+        log.info("\t~\tCompleted");
     }
 
     private void rollupCf(final ColumnFamily<Locator, Long> columnFamily) {
-
         final Granularity gran = Granularity.fromString(columnFamily.getName());
+
         Function<Row<Long, Locator>, Boolean> rowFunction = new Function<Row<Long, Locator>, Boolean>() {
 
             @Override
@@ -78,7 +77,7 @@ public class ManualRollup extends AstyanaxIO {
                     return true;
                 }
 
-                System.out.println("\t~\t~\tReRolling up for shard " + row.getKey());
+                log.info("\t~\t~\tReRolling up for shard: " + row.getKey());
                 ColumnList<Locator> columns = row.getColumns();
                 ArrayList<ReRollWork> work = new ArrayList<ReRollWork>();
 
@@ -116,7 +115,7 @@ public class ManualRollup extends AstyanaxIO {
                     }
 
                 } catch (Exception e) {
-                    System.err.println("Fatal exception while re-rolling data"+e);
+                    log.error("Fatal exception while re-rolling data", e);
                     throw new RuntimeException();
                 } finally {
                     rerollContext.stop();
@@ -136,7 +135,7 @@ public class ManualRollup extends AstyanaxIO {
                                        .build()
                                        .call();
         } catch (Exception e) {
-            System.err.println("Fatal error in AllRowsReader"+e);
+            log.error("Fatal error in AllRowsReader", e);
             throw new RuntimeException(e);
         } finally {
             rollupExecutors.shutdown();

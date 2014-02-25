@@ -47,8 +47,6 @@ public class ReRollWork implements Callable<Boolean> {
             ColumnFamily<Locator, Long> srcCF = CassandraModel.getColumnFamily(rollupClass, gran.finer());
             ColumnFamily<Locator, Long> dstCF = CassandraModel.getColumnFamily(rollupClass, gran);
 
-            System.out.println("Calculating rollups for Locator:" + locator + " for Granularity:" + gran + ". Reading from: " + srcCF.getName() + ". Writing to: " + dstCF.getName());
-
             //Get Rollup Computer
             Rollup.Type rollupComputer = RollupRunnable.getRollupComputer(rollupType, gran.finer());
             Iterable<Range> ranges = Range.rangesForInterval(gran, range.getStart(), range.getStop());
@@ -60,11 +58,11 @@ public class ReRollWork implements Callable<Boolean> {
                         locator, r, srcCF);
                 Rollup rollup = rollupComputer.compute(input);
                 writeContexts.add(new SingleRollupWriteContext(rollup, new SingleRollupReadContext(locator, r, gran), dstCF));
-                AstyanaxWriter.getInstance().insertRollups(writeContexts);
             }
-
+            AstyanaxWriter.getInstance().insertRollups(writeContexts);
+            log.info("Calculated rollups for Locator:" + locator + " for Granularity:" + gran + ". Reading from: " + srcCF.getName() + ". Writing to: " + dstCF.getName());
         } catch (Throwable e) {
-            System.err.println("ReRoll failed for Locator: "+locator+" Granularity: "+gran);
+            log.error("ReRoll failed for Locator: "+locator+" Granularity: "+gran, e);
             failedMeter.mark();
             //throw an exception here.
             throw new Exception(e);

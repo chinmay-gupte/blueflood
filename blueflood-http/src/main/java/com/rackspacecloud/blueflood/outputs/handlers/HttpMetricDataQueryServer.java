@@ -74,7 +74,7 @@ public class HttpMetricDataQueryServer {
 
             pipeline.addLast("decoder", new HttpRequestDecoder());
             pipeline.addLast("encoder", new HttpResponseEncoder());
-            pipeline.addLast("handler", new QueryStringDecoderAndRouter(router));
+            pipeline.addLast("handlers", new QueryStringDecoderAndRouter(router));
 
             return pipeline;
         }

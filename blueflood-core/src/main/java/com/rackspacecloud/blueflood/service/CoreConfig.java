@@ -97,7 +97,17 @@ public enum CoreConfig implements ConfigDefaults {
     REPAIR_ROLLUPS_ON_READ("true"),
 
     // valid options are: GEOMETRIC, LINEAR, and LESSTHANEQUAL
-    GET_BY_POINTS_GRANULARITY_SELECTION("GEOMETRIC");
+    GET_BY_POINTS_GRANULARITY_SELECTION("GEOMETRIC"),
+
+    START_MILLIS("1392811200000"), // Human time (GMT): Wed, 19 Feb 2014 12:00:00 GMT
+    STOP_MILLIS("1392984000000"),  //                   Fri, 21 Feb 2014 12:00:00 GMT
+    MAX_REROLL_THREADS("2"),
+
+    METRICS_5M_ENABLED("true"),
+    METRICS_20M_ENABLED("false"),
+    METRICS_60M_ENABLED("false"),
+    METRICS_240M_ENABLED("false"),
+    METRICS_1440M_ENABLED("false");
 
     static {
         Configuration.getInstance().loadDefaults(CoreConfig.values());

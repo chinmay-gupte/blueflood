@@ -168,7 +168,7 @@ public class HttpMetricsIngestionServer {
             pipeline.addLast("chunkaggregator", new HttpChunkAggregator(MAX_CONTENT_LENGTH));
             pipeline.addLast("inflater", new HttpContentDecompressor());
             pipeline.addLast("encoder", new HttpResponseEncoder());
-            pipeline.addLast("handler", new QueryStringDecoderAndRouter(router));
+            pipeline.addLast("handlers", new QueryStringDecoderAndRouter(router));
 
             return pipeline;
         }

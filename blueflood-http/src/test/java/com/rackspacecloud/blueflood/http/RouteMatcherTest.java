@@ -117,9 +117,9 @@ public class RouteMatcherTest {
     private HttpRequest testPattern(String pattern, String URI) throws Exception {
         RouteMatcher router = new RouteMatcher();
         final TestRouteHandler handler = new TestRouteHandler();
-        // Register handler for pattern
+        // Register handlers for pattern
         router.get(pattern, handler);
-        // See if handler is called when URI matching pattern is received
+        // See if handlers is called when URI matching pattern is received
         router.route(null, new DefaultHttpRequest(HttpVersion.HTTP_1_1, HttpMethod.GET, URI));
 
         // Return modified request (headers might be updated with paramsPositionMap from URI)

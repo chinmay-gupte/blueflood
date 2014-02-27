@@ -1,4 +1,4 @@
-package com.rackspacecloud.blueflood.io;
+package com.rackspacecloud.blueflood.backfiller;
 
 import com.codahale.metrics.*;
 import com.codahale.metrics.Timer;
@@ -9,7 +9,9 @@ import com.netflix.astyanax.model.ColumnList;
 import com.netflix.astyanax.model.Row;
 import com.netflix.astyanax.recipes.reader.AllRowsReader;
 import com.rackspacecloud.blueflood.concurrent.ThreadPoolBuilder;
-import com.rackspacecloud.blueflood.io.handlers.ReRollWork;
+import com.rackspacecloud.blueflood.backfiller.handlers.ReRollWork;
+import com.rackspacecloud.blueflood.io.AstyanaxIO;
+import com.rackspacecloud.blueflood.io.CassandraModel;
 import com.rackspacecloud.blueflood.rollup.Granularity;
 import com.rackspacecloud.blueflood.service.*;
 import com.rackspacecloud.blueflood.types.*;

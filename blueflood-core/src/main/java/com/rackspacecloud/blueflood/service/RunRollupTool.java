@@ -1,6 +1,6 @@
 package com.rackspacecloud.blueflood.service;
 
-import com.rackspacecloud.blueflood.io.ManualRollup;
+import com.rackspacecloud.blueflood.backfiller.ManualRollup;
 
 public class RunRollupTool {
 

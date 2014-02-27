@@ -1,4 +1,4 @@
-package com.rackspacecloud.blueflood.io.handlers;
+package com.rackspacecloud.blueflood.backfiller.handlers;
 
 import com.codahale.metrics.Meter;
 import com.codahale.metrics.Timer;
@@ -7,7 +7,7 @@ import com.rackspacecloud.blueflood.cache.MetadataCache;
 import com.rackspacecloud.blueflood.io.AstyanaxReader;
 import com.rackspacecloud.blueflood.io.AstyanaxWriter;
 import com.rackspacecloud.blueflood.io.CassandraModel;
-import com.rackspacecloud.blueflood.io.ManualRollup;
+import com.rackspacecloud.blueflood.backfiller.ManualRollup;
 import com.rackspacecloud.blueflood.rollup.Granularity;
 import com.rackspacecloud.blueflood.service.*;
 import com.rackspacecloud.blueflood.types.*;

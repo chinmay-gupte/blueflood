@@ -43,7 +43,7 @@ public class Locator {
         // Left empty
     }
 
-    private Locator(String fullyQualifiedMetricName) throws IllegalArgumentException {
+    public Locator(String fullyQualifiedMetricName) throws IllegalArgumentException {
         setStringRep(fullyQualifiedMetricName);
     }
 

@@ -22,7 +22,7 @@ import java.util.concurrent.locks.ReentrantLock;
 
 public class CloudFilesManager implements FileManager {
     private static final Logger log = LoggerFactory.getLogger(CloudFilesManager.class);
-    private static final int BUF_SIZE = 0x00100000; // 1MB.
+    private static final int BUF_SIZE = 0x00100000; // 1MB. TODO: change this to 512 MB
     private static final String lastMarkerPath = ".bluecanal_last_marker";
     
     private final String user;
@@ -34,10 +34,10 @@ public class CloudFilesManager implements FileManager {
     private final List<NewFileListener> listeners = new ArrayList<NewFileListener>();
     
     private String lastMarker = MarkerUtils.readLastMarker();
-    private ExecutorService downloadWorkers = Executors.newFixedThreadPool(4);
+    private ExecutorService downloadWorkers = Executors.newFixedThreadPool(5);
 
-    private long startTime = 1392811200000L;
-    private long stopTime = 1392984000000L;
+    private static final long START_TIME = 1392811200000L; // TODO: In order to account for back pressure, we will have to give a buffer window around the replay period *I think*
+    private static final long STOP_TIME = 1392984000000L;
     
     public CloudFilesManager(String user, String key, String provider, String zone, String container, int batchSize) {
         this.user = user;
@@ -62,8 +62,30 @@ public class CloudFilesManager implements FileManager {
         PageSet<? extends StorageMetadata> pages = store.list(container, options);
         
         log.debug("Saw {} new files since {}", pages.size() == batchSize ? "many" : Integer.toString(pages.size()), lastMarker);
-        
-        return pages.size() > 0;
+
+        boolean emptiness = getBlobsWithinRange(pages).isEmpty();
+
+        if(emptiness) {
+            log.warn("No file found within range " + START_TIME + " : " + STOP_TIME);
+        } else {
+            log.debug("Files found within range " + START_TIME + " : " + STOP_TIME);
+        }
+
+        return emptiness;
+    }
+
+    private NavigableMap<Long,String> getBlobsWithinRange(PageSet<? extends StorageMetadata> pages) {
+        TreeMap<Long, String> tsToBlobName = new TreeMap<Long, String>();
+        for (StorageMetadata blobMeta : pages) {
+            String fileName = blobMeta.getName(); // 20140226_1393442533000.json.gz
+            String dateAndTs = fileName.split(".", 2)[0].trim(); // 20140226_1393442533000
+            String tsCreated = dateAndTs.split("_")[1].trim(); // 1393442533000
+            long ts = Long.parseLong(tsCreated);
+            tsToBlobName.put(ts, fileName);
+        }
+        //Gets key within the time range specified
+        NavigableMap<Long, String> mapWithinRange = tsToBlobName.subMap(START_TIME, true, STOP_TIME, true);
+        return mapWithinRange;
     }
     
     private class BlobDownload implements Callable<String> {
@@ -133,23 +155,11 @@ public class CloudFilesManager implements FileManager {
 
         // threadsafe according to https://jclouds.apache.org/documentation/userguide/blobstore-guide/
         BlobStore store = ctx.getBlobStore();
-
-        // TreeMap used because it keeps the keys sorted
-        TreeMap<Long, String> tsToBlobName = new TreeMap<Long, String>();
-        
         ListContainerOptions options = new ListContainerOptions().maxResults(batchSize).afterMarker(lastMarker);
         PageSet<? extends StorageMetadata> pages = store.list(container, options);
 
-        for (StorageMetadata blobMeta : pages) {
-            String fileName = blobMeta.getName(); // 20140226_1393442533000.json.gz
-            String dateAndTs = fileName.split(".", 2)[0].trim(); // 20140226_1393442533000
-            String tsCreated = dateAndTs.split("_")[1].trim(); // 1393442533000
-            long ts = Long.parseLong(tsCreated);
-            tsToBlobName.put(ts, fileName);
-        }
-
         //Gets key within the time range specified
-        NavigableMap<Long, String> mapWithinRange = tsToBlobName.subMap(startTime, true, stopTime, true);
+        NavigableMap<Long, String> mapWithinRange = getBlobsWithinRange(pages);
 
         //Download only for keys within that range
         for(Map.Entry<Long, String> blobMeta : mapWithinRange.entrySet()) {

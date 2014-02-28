@@ -12,12 +12,20 @@ import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
+import java.util.Comparator;
 import java.util.Map;
 import java.util.TreeMap;
 
 public class BuildStore {
 
     private static BuildStore buildStore = new BuildStore();
+
+    private static Comparator<Range> rangeComparator = new Comparator<Range>() {
+        @Override public int compare(Range r1, Range r2) {
+            return (int) (r1.getStart() - r2.getStart());
+        }
+    };
+
     private static TreeMap<Range, TreeMap<Locator, Points>> locatorToTimestampToPoint;
     private static Map.Entry<Range, TreeMap<Locator, Points>> lastEntry;
 
@@ -26,9 +34,9 @@ public class BuildStore {
         return buildStore;
     }
 
-    public static void merge(InputStream jsonInput) throws IOException {
+    public static void merge (InputStream jsonInput) throws IOException {
 
-        locatorToTimestampToPoint = new TreeMap<Range, TreeMap<Locator, Points>>();
+        locatorToTimestampToPoint = new TreeMap<Range, TreeMap<Locator, Points>>(rangeComparator);
 
         if (lastEntry != null)
             locatorToTimestampToPoint.put(lastEntry.getKey(), lastEntry.getValue());
@@ -57,7 +65,8 @@ public class BuildStore {
                             metricName).trim();
                     Locator metricLocator = new Locator(longMetricName);
                     long timestamp = checkFromJson.getTimestamp();
-                    // BIG TODO : ---------> 0L?
+
+                    // BIG TODO : ---------> What would be the reference time, time in millis of 0th slot?
                     Range rangeOfThisTimestamp = Granularity.MIN_5.deriveRange(Granularity.MIN_5.slot(timestamp), 0L);
 
                     if(locatorToTimestampToPoint.containsKey(rangeOfThisTimestamp)) {
@@ -86,10 +95,18 @@ public class BuildStore {
 
     public void close() {
 
+        // Wait for build store to get empty?
+
     }
 
     // Kick-Ass method
     public static Map<Range, TreeMap<Locator, Points>> getEligibleData() {
+
+        // TODO: this will need explanation behind this thinking
+        if (locatorToTimestampToPoint.size() < 2) {
+            return null;
+        }
+
         lastEntry = locatorToTimestampToPoint.lastEntry();
         return locatorToTimestampToPoint.headMap(lastEntry.getKey());
     }

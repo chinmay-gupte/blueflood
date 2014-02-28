@@ -14,7 +14,8 @@ import java.io.FilenameFilter;
 import java.io.IOException;
 
 public class ManualRollupCF {
-    private static final Logger log = LoggerFactory.getLogger(ManualRollup.class);
+
+    private static final Logger log = LoggerFactory.getLogger(ManualRollupCF.class);
 
     public static void main(String args[]) {
         final String USER = System.getProperty("CLOUDFILES_USER");
@@ -25,8 +26,6 @@ public class ManualRollupCF {
 
         final File downloadDir = new File("/tmp/metrics_gzipped");
         downloadDir.mkdirs();
-        final File indexDir = new File("/tmp/metrics_index");
-        indexDir.mkdirs();
 
         // connect the download service to the file manager.
         FileManager fileManager = new CloudFilesManager(USER, KEY, PROVIDER, ZONE, CONTAINER, 10);
@@ -46,7 +45,7 @@ public class ManualRollupCF {
             }
         }
 
-        // connect the file manager to the indexer.
+        // connect the file manager to the file parser listener
         fileManager.addNewFileListener(new FileListener());
 
         try {

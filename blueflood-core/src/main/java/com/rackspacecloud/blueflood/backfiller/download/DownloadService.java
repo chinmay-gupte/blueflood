@@ -13,6 +13,7 @@ public class DownloadService {
     private static final Logger log = LoggerFactory.getLogger(DownloadService.class);
     private static final int MAX_FILES_IN_DIR = 100;
     private static final int MAX_UNEXPECTED_ERRORS = 5;
+
     
     private final File downloadDir;
     private final Thread thread;
@@ -37,7 +38,7 @@ public class DownloadService {
                             return name.endsWith(".json.gz.tmp");
                         }
                     };
-                    
+                    //This might be redundant. If the lock has been acquired back, there would be no tmp filed *ideally* Sleeping in the finally block of lock acquiring code makes more sense
                     while (downloadDir.listFiles(filter).length > 1) {
                         try { 
                             sleep(200L);
@@ -106,8 +107,8 @@ public class DownloadService {
             return;
         }
         
-        // safety valve.
-        while (downloadDir.listFiles().length > MAX_FILES_IN_DIR) {
+        // safety valve. Possible infinite thread sleep? This will make sure we fire downloading only when are the files are consumed/merged
+        while (downloadDir.listFiles().length != 0) {
             log.debug("Too many queued files; sleeping for 5m");
             try { Thread.sleep(5 * 60 * 1000); } catch (Exception ex) {}
         }

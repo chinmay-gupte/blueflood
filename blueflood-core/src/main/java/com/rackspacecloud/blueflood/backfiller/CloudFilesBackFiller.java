@@ -13,9 +13,9 @@ import java.io.File;
 import java.io.FilenameFilter;
 import java.io.IOException;
 
-public class ManualRollupCF {
+public class CloudFilesBackFiller {
 
-    private static final Logger log = LoggerFactory.getLogger(ManualRollupCF.class);
+    private static final Logger log = LoggerFactory.getLogger(CloudFilesBackFiller.class);
 
     public static void main(String args[]) {
         final String USER = System.getProperty("CLOUDFILES_USER");
@@ -28,7 +28,7 @@ public class ManualRollupCF {
         downloadDir.mkdirs();
 
         // connect the download service to the file manager.
-        FileManager fileManager = new CloudFilesManager(USER, KEY, PROVIDER, ZONE, CONTAINER, 10);
+        FileManager fileManager = new CloudFilesManager(USER, KEY, PROVIDER, ZONE, CONTAINER, 5);
         DownloadService downloadService = new DownloadService(downloadDir);
         downloadService.setFileManager(fileManager);
 

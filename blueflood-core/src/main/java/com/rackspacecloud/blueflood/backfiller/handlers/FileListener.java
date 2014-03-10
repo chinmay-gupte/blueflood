@@ -14,7 +14,6 @@ import java.util.zip.GZIPInputStream;
 public class FileListener implements NewFileListener {
 
     private static final Logger log = LoggerFactory.getLogger(FileListener.class);
-
     private final ExecutorService parserThreadPool = Executors.newFixedThreadPool(5);
     private final ExecutorService deletionThreadPool = Executors.newFixedThreadPool(5);
 
@@ -47,11 +46,12 @@ public class FileListener implements NewFileListener {
                     }
                 } catch (InterruptedException ex) {
                     // requeue
+                    // TODO: there is a chance for infinite requeing. Set a finite threshold and stop the download service if it exceeds?
                     log.info("Requeueing {}", f.getAbsolutePath());
                     fileReceived(f);
                 } catch (ExecutionException ex) {
                     // something happened during parsing.
-                    log.error("Could not parse {} {}", f.getAbsolutePath(), ex.getMessage());
+                    log.error("Could not parse {} {}", f.getAbsolutePath(), ex);
                     try { Thread.sleep(30000L); } catch (Exception err) {}
                     log.info("Requeueing {}", f.getAbsolutePath());
                     fileReceived(f);

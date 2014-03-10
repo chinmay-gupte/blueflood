@@ -1,5 +1,7 @@
 package com.rackspacecloud.blueflood.backfiller.download;
 
+import com.rackspacecloud.blueflood.rollup.Granularity;
+import com.rackspacecloud.blueflood.types.Range;
 import org.jclouds.ContextBuilder;
 import org.jclouds.blobstore.BlobStore;
 import org.jclouds.blobstore.BlobStoreContext;
@@ -22,8 +24,8 @@ import java.util.concurrent.locks.ReentrantLock;
 
 public class CloudFilesManager implements FileManager {
     private static final Logger log = LoggerFactory.getLogger(CloudFilesManager.class);
-    private static final int BUF_SIZE = 0x00100000; // 1MB. TODO: change this to 512 MB
-    private static final String lastMarkerPath = ".bluecanal_last_marker";
+    private static final int BUF_SIZE = 0x00100000; // 1MB.
+    private static final String lastMarkerPath = "/Users/chinmaygupte/.bluecanal_last_marker";
     
     private final String user;
     private final String key;
@@ -36,8 +38,11 @@ public class CloudFilesManager implements FileManager {
     private String lastMarker = MarkerUtils.readLastMarker();
     private ExecutorService downloadWorkers = Executors.newFixedThreadPool(5);
 
-    private static final long START_TIME = 1392811200000L; // TODO: In order to account for back pressure, we will have to give a buffer window around the replay period *I think*
-    private static final long STOP_TIME = 1392984000000L;
+    // TODO: In order to account for back pressure, we will need to give a buffer window around the replay period *I think*
+    public static final long START_TIME = 1392811200000L;
+    public static final long STOP_TIME = 1392984000000L;
+
+    public static final Iterable<Range> ranges = Range.rangesForInterval(Granularity.MIN_5, START_TIME, STOP_TIME);
     
     public CloudFilesManager(String user, String key, String provider, String zone, String container, int batchSize) {
         this.user = user;
@@ -62,23 +67,23 @@ public class CloudFilesManager implements FileManager {
         PageSet<? extends StorageMetadata> pages = store.list(container, options);
         
         log.debug("Saw {} new files since {}", pages.size() == batchSize ? "many" : Integer.toString(pages.size()), lastMarker);
-
         boolean emptiness = getBlobsWithinRange(pages).isEmpty();
 
         if(emptiness) {
-            log.warn("No file found within range " + START_TIME + " : " + STOP_TIME);
+            log.warn("No file found within range {}", new Range(START_TIME, STOP_TIME));
         } else {
-            log.debug("Files found within range " + START_TIME + " : " + STOP_TIME);
+            log.debug("New files found within range {}", new Range(START_TIME, STOP_TIME));
         }
 
-        return emptiness;
+        return !emptiness;
     }
 
     private NavigableMap<Long,String> getBlobsWithinRange(PageSet<? extends StorageMetadata> pages) {
+        // TreeMap used because of sorted property
         TreeMap<Long, String> tsToBlobName = new TreeMap<Long, String>();
         for (StorageMetadata blobMeta : pages) {
             String fileName = blobMeta.getName(); // 20140226_1393442533000.json.gz
-            String dateAndTs = fileName.split(".", 2)[0].trim(); // 20140226_1393442533000
+            String dateAndTs = fileName.split("\\.", 2)[0].trim(); // 20140226_1393442533000
             String tsCreated = dateAndTs.split("_")[1].trim(); // 1393442533000
             long ts = Long.parseLong(tsCreated);
             tsToBlobName.put(ts, fileName);
@@ -163,6 +168,7 @@ public class CloudFilesManager implements FileManager {
 
         //Download only for keys within that range
         for(Map.Entry<Long, String> blobMeta : mapWithinRange.entrySet()) {
+            log.info("Downloading file: "+blobMeta.getValue());
             downloadWorkers.submit(new BlobDownload(downloadDir, store, container, blobMeta.getValue()));
             lastMarker = blobMeta.getValue();
         }

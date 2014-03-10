@@ -11,10 +11,7 @@ import java.util.concurrent.locks.ReentrantLock;
 
 public class DownloadService {
     private static final Logger log = LoggerFactory.getLogger(DownloadService.class);
-    private static final int MAX_FILES_IN_DIR = 100;
     private static final int MAX_UNEXPECTED_ERRORS = 5;
-
-    
     private final File downloadDir;
     private final Thread thread;
     private final Lock downloadLock = new ReentrantLock(true);
@@ -38,15 +35,19 @@ public class DownloadService {
                             return name.endsWith(".json.gz.tmp");
                         }
                     };
-                    //This might be redundant. If the lock has been acquired back, there would be no tmp filed *ideally* Sleeping in the finally block of lock acquiring code makes more sense
                     while (downloadDir.listFiles(filter).length > 1) {
                         try { 
                             sleep(200L);
                         } catch (InterruptedException ex) {
-                            Thread.interrupted(); // clears interrupt for tidiness sake.
+                            Thread.interrupted();
                         }
                     }
                     doCheck();
+                    try {
+                        sleep(1000);
+                    } catch (InterruptedException e) {
+                        Thread.interrupted();
+                    }
                 }
                 log.debug("Download service thread stopping");
             }
@@ -107,9 +108,9 @@ public class DownloadService {
             return;
         }
         
-        // safety valve. Possible infinite thread sleep? This will make sure we fire downloading only when are the files are consumed/merged
+        // Possible infinite thread sleep? This will make sure we fire downloading only when are the files are consumed/merged
         while (downloadDir.listFiles().length != 0) {
-            log.debug("Too many queued files; sleeping for 5m");
+            log.debug("Waiting for files in download directory to clear up. Sleeping for 5 mins. If you see this persistently, it means the downloaded files are not getting merged properly/timely");
             try { Thread.sleep(5 * 60 * 1000); } catch (Exception ex) {}
         }
         

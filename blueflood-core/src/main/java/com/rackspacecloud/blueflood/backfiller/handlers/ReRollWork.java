@@ -1,5 +1,6 @@
 package com.rackspacecloud.blueflood.backfiller.handlers;
 
+import com.codahale.metrics.Counter;
 import com.codahale.metrics.Meter;
 import com.codahale.metrics.Timer;
 import com.netflix.astyanax.model.ColumnFamily;
@@ -27,6 +28,7 @@ public class ReRollWork implements Callable<Boolean> {
     private static final Logger log = LoggerFactory.getLogger(ManualRollup.class);
     private static final Meter failedMeter = Metrics.meter(ManualRollup.class, "Metadatacache exception while grabbing rollup type");
     private static final Timer rollupTimer = Metrics.timer(ManualRollup.class, "ReRoll Timer");
+    private static final Counter noDataAvailableCounter = Metrics.counter(ManualRollup.class, "NoDataAvailable counter");
     private static final MetadataCache rollupTypeCache = MetadataCache.createLoadingCacheInstance(
             new TimeValue(48, TimeUnit.HOURS),
             Configuration.getInstance().getIntegerProperty(CoreConfig.MAX_REROLL_THREADS));
@@ -56,6 +58,12 @@ public class ReRollWork implements Callable<Boolean> {
                 Points input;
                 input = AstyanaxReader.getInstance().getDataToRoll(rollupClass,
                         locator, r, srcCF);
+
+                if(input == null || input.isEmpty()) {
+                    noDataAvailableCounter.inc();
+                    continue;
+                }
+
                 Rollup rollup = rollupComputer.compute(input);
                 writeContexts.add(new SingleRollupWriteContext(rollup, new SingleRollupReadContext(locator, r, gran), dstCF));
             }

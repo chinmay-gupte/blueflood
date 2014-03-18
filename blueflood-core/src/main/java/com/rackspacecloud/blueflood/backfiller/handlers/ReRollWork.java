@@ -29,6 +29,8 @@ public class ReRollWork implements Callable<Boolean> {
     private static final Meter failedMeter = Metrics.meter(ManualRollup.class, "Metadatacache exception while grabbing rollup type");
     private static final Timer rollupTimer = Metrics.timer(ManualRollup.class, "ReRoll Timer");
     private static final Counter noDataAvailableCounter = Metrics.counter(ManualRollup.class, "NoDataAvailable counter");
+    private static final Counter foundValidPointsToCalculateRollupCounter = Metrics.counter(ManualRollup.class, "FoundValidPointsToCalculateRollup Counter");
+
     private static final MetadataCache rollupTypeCache = MetadataCache.createLoadingCacheInstance(
             new TimeValue(48, TimeUnit.HOURS),
             Configuration.getInstance().getIntegerProperty(CoreConfig.MAX_REROLL_THREADS));
@@ -63,6 +65,8 @@ public class ReRollWork implements Callable<Boolean> {
                     noDataAvailableCounter.inc();
                     continue;
                 }
+
+                foundValidPointsToCalculateRollupCounter.inc();
 
                 Rollup rollup = rollupComputer.compute(input);
                 writeContexts.add(new SingleRollupWriteContext(rollup, new SingleRollupReadContext(locator, r, gran), dstCF));

@@ -105,7 +105,10 @@ public enum CoreConfig implements ConfigDefaults {
     REPAIR_ROLLUPS_ON_READ("true"),
 
     // valid options are: GEOMETRIC, LINEAR, and LESSTHANEQUAL
-    GET_BY_POINTS_GRANULARITY_SELECTION("GEOMETRIC");
+    GET_BY_POINTS_GRANULARITY_SELECTION("GEOMETRIC"),
+
+    //Catch-up period in hours
+    CATCH_UP_PERIOD("48");
 
     static {
         Configuration.getInstance().loadDefaults(CoreConfig.values());

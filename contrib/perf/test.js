@@ -6,12 +6,14 @@ var StatsD = require('node-statsd').StatsD;
 var Identity = require('pkgcloud/lib/pkgcloud/rackspace/identity').Identity;
 var http = require('http');
 var util = require('util');
-//var KeepAliveAgent = require('keep-alive-agent');
 var successes = 0,
     requests = 0,
     failures = 0,
+    rateStore = [],
     keepAliveAgent, argv, reqOpts, reqObj, identityClient, token, client;
 
+var MAX_RETRY_COUNT = 1,
+    IDENTITY_SERVICE_URL = 'https://identity.api.rackspacecloud.com';
 
 var argparsing = optimist
   .usage('\nBenchmark Blueflood ingestion of metrics.\n\nUsage $0 {options}').wrap(150)
@@ -82,7 +84,7 @@ var argparsing = optimist
   .options('e', {
     'alias': 'errorTolerance',
     'desc': 'Maximum number of errors to be tolerated',
-    'default': 100
+    'default': 10
   })
   .options('a', {
     'alias': 'doAuthentication',
@@ -96,7 +98,7 @@ var argparsing = optimist
   });
 
 
-function makeRequest(metrics, callback) {
+function makeRequest(metrics, retryCount, callback) {
   var metricsString = JSON.stringify(metrics),
       startTime = new Date().getTime(),
       req = reqObj.request(reqOpts, function(res) {
@@ -105,22 +107,21 @@ function makeRequest(metrics, callback) {
         }
         if (res.statusCode === 200) {
           successes++;
+        } else if (res.statusCode === 401 && retryCount <= MAX_RETRY_COUNT) {
+          makeRequest(metrics, retryCount++, callback);
         } else {
-          console.warn(res);
-          console.warn('Got status code of ' + res.statusCode);
+          //console.warn('Got status code of ' + res.statusCode);
           res.setEncoding('utf8');
           res.on('data', function (chunk) {
-              console.warn('Error Response: ' + chunk);
               if (argv.e <= failures++) {
-                console.error('Shutting down the benchmark because tolerance for errors has been exceedeed');
-                callback(res);
-              }    
+                var error = new Error("Shutting down the benchmark because tolerance for errors has been exceedeed\n");
+                callback(error); // causes the error to be bubbled up and finally stops the benchmarking
+              }
           });
         }
         res.resume(); // makes it so that we can re-use the connection without having to read the response body
         callback();
       });
-
 
   if (!argv.c) {
     req.setHeader('Content-Length', metricsString.length);
@@ -131,7 +132,6 @@ function makeRequest(metrics, callback) {
   }
 
   req.on('error', function(err) {
-    console.error(err);
     callback(err);
   });
 
@@ -167,7 +167,7 @@ function sendMetricsForBatch(batchPrefix, callback) {
           metrics.push(metric);
         }
         sendTimestamp += argv.interval;
-        makeRequest(metrics, callback);
+        makeRequest(metrics, 0, callback);
       },
       function(err) {
         callback(err);
@@ -181,14 +181,14 @@ function _randomIntInc(low, high) {
 
 
 function _getToken() {
-  identityClient.authorize({'url':'https://identity.api.rackspacecloud.com'}, function(err) {
+  identityClient.authorize({'url':IDENTITY_SERVICE_URL}, function(err) {
       if (err) {
-        console.log('Cannot authenticate with Idenity with the supplied creds ', err);
+        var errorMsg = 'Cannot authenticate with Idenity with the supplied creds'; 
         if (token == null) {
-          process.exit(0);
-
+          console.log(errorMsg, err);
+          process.exit(0); // this is the first time we are authenticating
         }
-        shutdown(err);
+        finalReportStatus(new Error(errorMsg));
       }
       token = identityClient.token.id;
   });
@@ -197,11 +197,9 @@ function _getToken() {
 
 function _getMean(numbers) {
   var sum = 0;
-
   for (var i = 0; i < numbers.length; i++) {
     sum += numbers[i];
   }
-
   return (sum / numbers.length);
 }
 
@@ -209,12 +207,10 @@ function _getMean(numbers) {
 function _getStdDeviation(numbers) {
   var distance = 0,
       mean = _getMean(numbers);
-
   for (var i = 0; i < numbers.length; i++) {
     distance += Math.pow((numbers[i] - mean), 2);
   }
-
-  return Math.sqrt((distance/numbers));
+  return Math.sqrt((distance/numbers.length));
 }
 
 // Send many batches
@@ -226,12 +222,7 @@ function sendBatches() {
   async.map(batchPrefixes,
             sendMetricsForBatch,
             function(err) {
-              reportStatus();
-              if (err) {
-                shutdown(err);
-              } else {
-                process.exit(0);
-              }
+              finalReportStatus(err);
             });
 }
 
@@ -239,40 +230,46 @@ function sendBatches() {
 function setupReporting() {
   var startTime = new Date().getTime(),
       lastSuccessCount = 0,
-      successWithinInterval, final,
-      rateStore = [];
+      successWithinInterval, timeTaken;
         
   function reportStatus() {
-    // whether this is final send. helps to automate collecting results of many runs.
-    final = (argv.r && (timeTaken >= (argv.r * 10000)));
+    timeTaken = new Date().getTime() - startTime;
     successWithinInterval = successes - lastSuccessCount;
-    rateStore = (successWithinInterval * argv.n / (timeTaken / 1000.0));
+    rateWithinInterval = (successWithinInterval * argv.n / (argv.v / 1000.0));
+    rateStore.push(rateWithinInterval)
 
-    console.log(util.format('%d \t %d \t %d \t %d \t %d \t %d',
-              (rateStore).toFixed(0),
-              (successWithinInterval / (timeTaken / 1000.0)).toFixed(0),
-              requests, successes, errors, timeTaken));
+    console.log(util.format('%d \t %d \t %d \t %d \t %d \t %d \n',
+               (rateWithinInterval).toFixed(0),
+               (successWithinInterval / (argv.v / 1000.0)).toFixed(0),
+               requests, successes, failures, timeTaken));
+
     lastSuccessCount = successes;
-
-    if (final) {
-      console.log('~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~Benchmarking Done~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~\n\n');
-      console.log('Total Metrics Sent \t Total Request Made \t Max rate \t Min rate \t Average rate \t Standard Deviation');
-      console.log(util.format('%d \t %d \t %d \t %d \t %d', requests * argv.n, requests, Math.max(rateStore), Math.min(rateStore), _getMean(rateStore), _getStdDeviation(numbers)));
-      process.exit(0);
+    if (argv.r && (timeTaken >= (argv.r * 10000))) {
+      finalReportStatus(null);
     }
   };
 
   console.log('Points\tMetrics\tBatches\tM/Batch\tInterv\tDur\tPoints/metric');
-  console.log(util.format('%d\t%d\t%d\t%d\t%dms\t%dm\t%d', argv.b * argv.n, argv.n, argv.b, argv.n, argv.i, argv.d, (argv.d * 60000.0 / argv.i).toFixed(0)));
-  console.log('M/s\tReq/s\tTotal\t2xx\tErrors\tTime');
+  console.log(util.format('%d\t%d\t%d\t%d\t%dms\t%dm\t%d\n', argv.b * argv.n, argv.n, argv.b, argv.n, argv.i, argv.d, (argv.d * 60000.0 / argv.i).toFixed(0)));
+  console.log('M/s\tReq/s\tTotal\t2xx\tErrors\t Time\n');
 
   setInterval(reportStatus, argv.v);
 }
 
-function shutdown(err) {
-  console.log('err\terr\terr\terr\terr\terr\terr\tfinal');
-  process.exit(1);
+
+function finalReportStatus(err) {
+      console.log('Total Metrics Sent \t Total Request Made \t Total Successes \t Total Errors \t  Max rate \t Min rate \t Average rate \t Standard Deviation');
+      console.log(util.format('\t%d\t\t\t%d\t\t\t%d\t\t\t%d\t\t%d\t\t%d\t\t%d\t\t%d\n\n', requests * argv.n, requests, successes, failures, Math.max(rateStore), Math.min(rateStore), _getMean(rateStore), _getStdDeviation(rateStore)));
+      if (err) {
+         console.log('~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~Benchmarking encountered error~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~\n\n');
+         console.error('Error encountered : %s', err.message)
+         process.exit(1);
+      } else {
+        console.log('~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~Benchmarking Done~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~\n\n');
+        process.exit(0);
+      }
 }
+
 
 function startup() {
   argv = argparsing.argv;
@@ -320,7 +317,6 @@ function startup() {
     reqOpts.agent = keepAliveAgent;
     reqObj = http;
   }
-
   setupReporting();
   sendBatches();
 }

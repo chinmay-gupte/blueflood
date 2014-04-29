@@ -33,7 +33,7 @@ var argparsing = optimist
     'desc': 'Interval in milliseconds between the reported collected_at time on data points being produced',
     'default': 30000
   })
-  .options('o', {
+  .options('d', {
     'alias': 'duration',
     'desc': 'How many minutes ago the first datapoint will be reported as having been collected at.',
     'default': 60
@@ -106,13 +106,19 @@ function makeRequest(metrics, retryCount, callback) {
         if (argv.statsd) {
           client.timing('request_time', new Date().getTime() - startTime);
         }
-        //ßßconsole.log("Received the status code as "+res.statusCode);
+
         if (res.statusCode === 200) {
           successes++;
         } else if (res.statusCode === 401 && retryCount <= MAX_RETRY_COUNT) {
+          // get a new token and retry
+          _getToken (function(err) {
+            if (err) {
+              finalReportStatus(err);
+            }
+            reqOpts.headers['x-auth-token'] = token;
+          });
           makeRequest(metrics, retryCount++, callback);
         } else {
-          //console.warn('Got status code of ' + res.statusCode);
           res.setEncoding('utf8');
           res.on('data', function (chunk) {
               if (argv.e <= failures++) {
@@ -137,7 +143,6 @@ function makeRequest(metrics, retryCount, callback) {
     callback(err);
   });
 
-  //console.log("Making a request with headers", reqOpts.headers);
   req.write(metricsString);
   req.end();
   requests++;
@@ -263,7 +268,7 @@ function setupReporting() {
 
 function finalReportStatus(err) {
       console.log('Total Metrics Sent \t Total Request Made \t Total Successes \t Total Errors \t  Max rate \t Min rate \t Average rate \t Standard Deviation');
-      console.log(util.format('\t%d\t\t\t%d\t\t\t%d\t\t\t%d\t\t%d\t\t%d\t\t%d\t\t%d\n\n', requests * argv.n, requests, successes, failures, Math.max.apply(null, rateStore).toFixed(0), Math.min.apply(null, rateStore).toFixed(0), _getMean(rateStore), _getStdDeviation(rateStore)));
+      console.log(util.format('\t%d\t\t\t%d\t\t\t%d\t\t\t%d\t\t%d\t\t%d\t\t%d\t\t%d\n\n', requests * argv.n, requests, successes, failures, Math.max.apply(null, rateStore), Math.min.apply(null, rateStore), _getMean(rateStore), _getStdDeviation(rateStore)));
       if (err) {
          console.log('~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~Benchmarking encountered error~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~\n\n');
          console.error('Error encountered : %s', err.message)
@@ -314,7 +319,6 @@ function startup() {
   }
 
   if (argv.a) {
-    //console.log("auth creds ", argv.u);
     identityClient = new Identity(JSON.parse(argv.u));
     _getToken (function(err) {
       if (err) {

@@ -170,7 +170,7 @@ function sendMetricsForBatch(batchPrefix, callback) {
           metric['metricValue'] = Math.random() * 100;
           metric['ttlInSeconds'] = 172800; //(2 * 24 * 60 * 60) //  # 2 days
           metric['unit'] = 'seconds';
-          if (argv.m === true) {
+          if (argv.multitenant) {
             metric['tenantId'] = argv.tenants[_randomIntInc(0, argv.tenants.length)] // selects a random tenant for stamping on each metric
           }
           metrics.push(metric);
@@ -298,9 +298,9 @@ function startup() {
   }
 
   reqOpts = {
-    host: argv.e,
+    host: argv.ingestionEndpoint,
     //port: argv.ingestionPort,
-    path: argv.m ? ('/v1.0/multitenant/experimental/metrics') : ('/v1.0/' + argv.x + '/experimental/metrics'),
+    path: argv.multitenant ? ('/v1.0/multitenant/experimental/metrics') : ('/v1.0/' + argv.tenantId + '/experimental/metrics'),
     method: 'POST',
     headers: {
         'Content-Type': 'application/json',
@@ -318,7 +318,7 @@ function startup() {
     reqObj = http;
   }
 
-  if (argv.a) {
+  if (argv.doAuthentication) {
     identityClient = new Identity(JSON.parse(argv.u));
     _getToken (function(err) {
       if (err) {

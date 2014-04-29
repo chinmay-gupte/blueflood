@@ -4,7 +4,7 @@ var async = require('async');
 var optimist = require('optimist');
 var StatsD = require('node-statsd').StatsD;
 var Identity = require('pkgcloud/lib/pkgcloud/rackspace/identity').Identity;
-var http = require('http');
+var http = require('https');
 var util = require('util');
 var successes = 0,
     requests = 0,
@@ -13,15 +13,16 @@ var successes = 0,
     keepAliveAgent, argv, reqOpts, reqObj, identityClient, token, client;
 
 var MAX_RETRY_COUNT = 1,
-    IDENTITY_SERVICE_URL = 'https://identity.api.rackspacecloud.com';
+    IDENTITY_SERVICE_URL = 'https://staging.identity.api.rackspacecloud.com';
 
 var argparsing = optimist
   .usage('\nBenchmark Blueflood ingestion of metrics.\n\nUsage $0 {options}').wrap(150)
-  .options('id', {
+  .options('x', {
     'alias': 'tenantId',
+    'desc': 'TenantID to be used with the metrics',
     'default': '123456'
   })
-  .string('id')
+  //.string('id')
   .options('n', {
     'alias': 'metrics',
     'desc': 'Number of metrics per batch.',
@@ -32,7 +33,7 @@ var argparsing = optimist
     'desc': 'Interval in milliseconds between the reported collected_at time on data points being produced',
     'default': 30000
   })
-  .options('d', {
+  .options('o', {
     'alias': 'duration',
     'desc': 'How many minutes ago the first datapoint will be reported as having been collected at.',
     'default': 60
@@ -105,6 +106,7 @@ function makeRequest(metrics, retryCount, callback) {
         if (argv.statsd) {
           client.timing('request_time', new Date().getTime() - startTime);
         }
+        //ßßconsole.log("Received the status code as "+res.statusCode);
         if (res.statusCode === 200) {
           successes++;
         } else if (res.statusCode === 401 && retryCount <= MAX_RETRY_COUNT) {
@@ -135,6 +137,7 @@ function makeRequest(metrics, retryCount, callback) {
     callback(err);
   });
 
+  //console.log("Making a request with headers", reqOpts.headers);
   req.write(metricsString);
   req.end();
   requests++;
@@ -148,6 +151,7 @@ function sendMetricsForBatch(batchPrefix, callback) {
     var startTime = new Date().getTime(),
         sendTimestamp = startTime - (argv.duration * 1000 * 60),
         j, metrics;
+
     async.until(
       function done() {
         return sendTimestamp >= startTime;
@@ -166,7 +170,7 @@ function sendMetricsForBatch(batchPrefix, callback) {
           }
           metrics.push(metric);
         }
-        sendTimestamp += argv.interval;
+        sendTimestamp += argv.i;
         makeRequest(metrics, 0, callback);
       },
       function(err) {
@@ -180,17 +184,13 @@ function _randomIntInc(low, high) {
 }
 
 
-function _getToken() {
+function _getToken(callback) {
   identityClient.authorize({'url':IDENTITY_SERVICE_URL}, function(err) {
-      if (err) {
-        var errorMsg = 'Cannot authenticate with Idenity with the supplied creds'; 
-        if (token == null) {
-          console.log(errorMsg, err);
-          process.exit(0); // this is the first time we are authenticating
-        }
-        finalReportStatus(new Error(errorMsg));
-      }
-      token = identityClient.token.id;
+    if (err) {
+      callback(err);
+    }
+    token = identityClient.token.id;
+    callback();
   });
 }
 
@@ -212,6 +212,7 @@ function _getStdDeviation(numbers) {
   }
   return Math.sqrt((distance/numbers.length));
 }
+
 
 // Send many batches
 function sendBatches() {
@@ -236,7 +237,10 @@ function setupReporting() {
     timeTaken = new Date().getTime() - startTime;
     successWithinInterval = successes - lastSuccessCount;
     rateWithinInterval = (successWithinInterval * argv.n / (argv.v / 1000.0));
-    rateStore.push(rateWithinInterval)
+
+    if (!isNaN(rateWithinInterval)) {
+      rateStore.push(rateWithinInterval)
+    }
 
     console.log(util.format('%d \t %d \t %d \t %d \t %d \t %d \n',
                (rateWithinInterval).toFixed(0),
@@ -250,7 +254,7 @@ function setupReporting() {
   };
 
   console.log('Points\tMetrics\tBatches\tM/Batch\tInterv\tDur\tPoints/metric');
-  console.log(util.format('%d\t%d\t%d\t%d\t%dms\t%dm\t%d\n', argv.b * argv.n, argv.n, argv.b, argv.n, argv.i, argv.d, (argv.d * 60000.0 / argv.i).toFixed(0)));
+  console.log(util.format('%d\t%d\t%d\t%d\t%d\t%d\t%d\n', argv.b * argv.n, argv.n, argv.b, argv.n, argv.i, argv.d, (argv.d * 60000.0 / argv.i).toFixed(0)));
   console.log('M/s\tReq/s\tTotal\t2xx\tErrors\t Time\n');
 
   setInterval(reportStatus, argv.v);
@@ -259,7 +263,7 @@ function setupReporting() {
 
 function finalReportStatus(err) {
       console.log('Total Metrics Sent \t Total Request Made \t Total Successes \t Total Errors \t  Max rate \t Min rate \t Average rate \t Standard Deviation');
-      console.log(util.format('\t%d\t\t\t%d\t\t\t%d\t\t\t%d\t\t%d\t\t%d\t\t%d\t\t%d\n\n', requests * argv.n, requests, successes, failures, Math.max(rateStore), Math.min(rateStore), _getMean(rateStore), _getStdDeviation(rateStore)));
+      console.log(util.format('\t%d\t\t\t%d\t\t\t%d\t\t\t%d\t\t%d\t\t%d\t\t%d\t\t%d\n\n', requests * argv.n, requests, successes, failures, Math.max.apply(null, rateStore).toFixed(0), Math.min.apply(null, rateStore).toFixed(0), _getMean(rateStore), _getStdDeviation(rateStore)));
       if (err) {
          console.log('~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~Benchmarking encountered error~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~\n\n');
          console.error('Error encountered : %s', err.message)
@@ -288,25 +292,16 @@ function startup() {
     client = new StatsD();
   }
 
-  if (argv.a) {
-    identityClient = new Identity(argv.u);
-    _getToken();
-  }
-
   reqOpts = {
-    host: argv.endpoint,
-    port: argv.ingestionPort,
-    path: (argv.m == true) ? ('/v1.0/multitenant/experimental/metrics') : ('/v1.0/' + argv.id + '/experimental/metrics'),
+    host: argv.e,
+    //port: argv.ingestionPort,
+    path: argv.m ? ('/v1.0/multitenant/experimental/metrics') : ('/v1.0/' + argv.x + '/experimental/metrics'),
     method: 'POST',
     headers: {
         'Content-Type': 'application/json',
         'Connection': 'keep-alive' 
     }
   };
-
-  if (argv.a) {
-    reqOpts.headers['x-auth-token'] = token;
-  }
 
   keepAliveAgent = new http.Agent({ keepAlive: true, maxSockets: argv.b });
 
@@ -317,8 +312,22 @@ function startup() {
     reqOpts.agent = keepAliveAgent;
     reqObj = http;
   }
-  setupReporting();
-  sendBatches();
+
+  if (argv.a) {
+    //console.log("auth creds ", argv.u);
+    identityClient = new Identity(JSON.parse(argv.u));
+    _getToken (function(err) {
+      if (err) {
+        finalReportStatus(err);
+      }
+      reqOpts.headers['x-auth-token'] = token;
+      setupReporting();
+      sendBatches();
+    });
+  } else {
+    setupReporting();
+    sendBatches();
+  }
 }
 
 startup()

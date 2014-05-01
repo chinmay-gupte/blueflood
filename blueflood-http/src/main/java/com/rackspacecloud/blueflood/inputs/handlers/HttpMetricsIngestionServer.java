@@ -94,12 +94,23 @@ public class HttpMetricsIngestionServer {
 
         router.post("/v1.0/:tenantId/experimental/metrics/statsd", new HttpStatsDIngestionHandler(statsdProcessorChain, timeout));
 
+        ThreadPoolExecutor acceptThreadPool = new ThreadPoolBuilder()
+                .withCorePoolSize(acceptThreads)
+                .withMaxPoolSize(acceptThreads)
+                .withName("Netty accept thread pool")
+                .build();
+
+        ThreadPoolExecutor workerThreadPool = new ThreadPoolBuilder()
+                .withCorePoolSize(workerThreads)
+                .withMaxPoolSize(workerThreads)
+                .withName("Netty worker thread pool")
+                .build();
 
         log.info("Starting metrics listener HTTP server on port {}", httpIngestPort);
         ServerBootstrap server = new ServerBootstrap(
                 new NioServerSocketChannelFactory(
-                        Executors.newFixedThreadPool(acceptThreads),
-                        Executors.newFixedThreadPool(workerThreads)));
+                        acceptThreadPool,
+                        workerThreadPool));
 
         server.setPipelineFactory(new MetricsHttpServerPipelineFactory(router));
         server.bind(new InetSocketAddress(httpIngestHost, httpIngestPort));

@@ -16,12 +16,15 @@
 
 package com.rackspacecloud.blueflood.http;
 
+import com.rackspacecloud.blueflood.service.Configuration;
+import com.rackspacecloud.blueflood.service.HttpConfig;
 import org.jboss.netty.channel.ChannelHandlerContext;
 import org.jboss.netty.channel.ExceptionEvent;
 import org.jboss.netty.channel.MessageEvent;
 import org.jboss.netty.channel.SimpleChannelUpstreamHandler;
 import org.jboss.netty.handler.codec.http.DefaultHttpRequest;
 import org.jboss.netty.handler.codec.http.HttpRequest;
+import org.jboss.netty.handler.codec.http.HttpResponseStatus;
 import org.jboss.netty.handler.codec.http.QueryStringDecoder;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -39,7 +42,11 @@ public class QueryStringDecoderAndRouter extends SimpleChannelUpstreamHandler {
         Object msg = e.getMessage();
         if (msg instanceof DefaultHttpRequest) {
             final DefaultHttpRequest request = (DefaultHttpRequest) msg;
-            router.route(ctx, HTTPRequestWithDecodedQueryParams.createHttpRequestWithDecodedQueryParams(request));
+            if (Configuration.getInstance().getBooleanProperty(HttpConfig.KILLOVER_HTTP_PROCESSING)) {
+                HttpResponder.respond(ctx, request, HttpResponseStatus.OK);
+            } else {
+                router.route(ctx, HTTPRequestWithDecodedQueryParams.createHttpRequestWithDecodedQueryParams(request));
+            }
         } else {
             log.error("Ignoring non HTTP message {}, from {}", e.getMessage(), e.getRemoteAddress());
             throw new Exception("Non-HTTP message from " + e.getRemoteAddress());

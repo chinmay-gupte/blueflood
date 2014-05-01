@@ -16,12 +16,18 @@
 
 package com.rackspacecloud.blueflood.http;
 
+import com.codahale.metrics.Meter;
+import com.rackspacecloud.blueflood.inputs.handlers.HttpMetricsIngestionServer;
+import com.rackspacecloud.blueflood.service.Configuration;
+import com.rackspacecloud.blueflood.service.HttpConfig;
+import com.rackspacecloud.blueflood.utils.Metrics;
 import org.jboss.netty.channel.ChannelHandlerContext;
 import org.jboss.netty.channel.ExceptionEvent;
 import org.jboss.netty.channel.MessageEvent;
 import org.jboss.netty.channel.SimpleChannelUpstreamHandler;
 import org.jboss.netty.handler.codec.http.DefaultHttpRequest;
 import org.jboss.netty.handler.codec.http.HttpRequest;
+import org.jboss.netty.handler.codec.http.HttpResponseStatus;
 import org.jboss.netty.handler.codec.http.QueryStringDecoder;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -29,6 +35,7 @@ import org.slf4j.LoggerFactory;
 public class QueryStringDecoderAndRouter extends SimpleChannelUpstreamHandler {
     private static final Logger log = LoggerFactory.getLogger(QueryStringDecoderAndRouter.class);
     private final RouteMatcher router;
+    private static final Meter requestDroppingMeter = Metrics.meter(HttpMetricsIngestionServer.class, "Requests dropped");
 
     public QueryStringDecoderAndRouter(RouteMatcher router) {
         this.router = router;
@@ -39,7 +46,12 @@ public class QueryStringDecoderAndRouter extends SimpleChannelUpstreamHandler {
         Object msg = e.getMessage();
         if (msg instanceof DefaultHttpRequest) {
             final DefaultHttpRequest request = (DefaultHttpRequest) msg;
-            router.route(ctx, HTTPRequestWithDecodedQueryParams.createHttpRequestWithDecodedQueryParams(request));
+            if (Configuration.getInstance().getBooleanProperty(HttpConfig.KILLOVER_HTTP_PROCESSING)) {
+                requestDroppingMeter.mark();
+                HttpResponder.respond(ctx, request, HttpResponseStatus.OK);
+            } else {
+                router.route(ctx, HTTPRequestWithDecodedQueryParams.createHttpRequestWithDecodedQueryParams(request));
+            }
         } else {
             log.error("Ignoring non HTTP message {}, from {}", e.getMessage(), e.getRemoteAddress());
             throw new Exception("Non-HTTP message from " + e.getRemoteAddress());

@@ -144,12 +144,18 @@ public class HttpMetricsIngestionServer {
                 rollupTypeCache,
                 true
         ).withLogger(log);
-        
-        this.defaultProcessorChain = new AsyncChain<MetricsCollection, List<Boolean>>()
-                .withFunction(typeAndUnitProcessor)
-                .withFunction(rollupTypeCacher)
-                .withFunction(batchSplitter)
-                .withFunction(batchWriter);
+
+        if (!Configuration.getInstance().getBooleanProperty(CoreConfig.DISABLE_META_UNIT_PROCESSING)) {
+            this.defaultProcessorChain = new AsyncChain<MetricsCollection, List<Boolean>>()
+                    .withFunction(typeAndUnitProcessor)
+                    .withFunction(rollupTypeCacher)
+                    .withFunction(batchSplitter)
+                    .withFunction(batchWriter);
+        } else {
+            this.defaultProcessorChain = new AsyncChain<MetricsCollection, List<Boolean>>()
+                    .withFunction(batchSplitter)
+                    .withFunction(batchWriter);
+        }
         
         this.statsdProcessorChain = new AsyncChain<String, List<Boolean>>()
                 .withFunction(new HttpStatsDIngestionHandler.MakeBundle())

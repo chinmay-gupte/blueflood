@@ -48,8 +48,8 @@ public class RollupRunnable implements Runnable {
     protected final long startWait;
 
     private static final Timer calcTimer = Metrics.timer(RollupRunnable.class, "Read And Calculate Rollup");
+    private static final boolean rollupTypeCacheDisabled = Configuration.getInstance().getBooleanProperty(CoreConfig.DISABLE_META_UNIT_PROCESSING);
 
-    
     public RollupRunnable(RollupExecutionContext executionContext, SingleRollupReadContext singleRollupReadContext, RollupBatchWriter rollupBatchWriter) {
         this.executionContext = executionContext;
         this.singleRollupReadContext = singleRollupReadContext;
@@ -86,8 +86,14 @@ public class RollupRunnable implements Runnable {
             // Read data and compute rollup
             Points input;
             Rollup rollup = null;
-            RollupType rollupType = RollupType.fromString((String) rollupTypeCache.get(
-                    singleRollupReadContext.getLocator(), MetricMetadata.ROLLUP_TYPE.name().toLowerCase()));
+
+            RollupType rollupType = null;
+            if (!rollupTypeCacheDisabled) {
+                rollupType = RollupType.fromString((String) rollupTypeCache.get(
+                                singleRollupReadContext.getLocator(), MetricMetadata.ROLLUP_TYPE.name().toLowerCase()));
+            } else {
+                rollupType = RollupType.BF_BASIC;
+            }
             Class<? extends Rollup> rollupClass = RollupType.classOf(rollupType, srcGran.coarser());
             ColumnFamily<Locator, Long> srcCF = CassandraModel.getColumnFamily(rollupClass, srcGran);
             ColumnFamily<Locator, Long> dstCF = CassandraModel.getColumnFamily(rollupClass, srcGran.coarser());

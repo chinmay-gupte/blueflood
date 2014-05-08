@@ -43,6 +43,7 @@ public class IncomingMetricMetadataAnalyzer {
     
     public Collection<IncomingMetricException> scanMetrics(Collection<IMetric> metrics) {
         List<IncomingMetricException> problems = new ArrayList<IncomingMetricException>();
+
         for (IMetric metric : metrics) {
             try {
                 if (metric instanceof Metric) {
@@ -59,21 +60,23 @@ public class IncomingMetricMetadataAnalyzer {
     }
 
     private IncomingMetricException checkMeta(Locator locator, String key, String incoming) throws CacheException {
-        String existing = cache.get(locator, key, String.class);
-
-        // always update the cache. it is smart enough to avoid needless writes.
-        cache.put(locator, key, incoming);
-
-        boolean differs = existing != null && !incoming.equals(existing);
-        if (differs) {
-            if (key.equals(MetricMetadata.UNIT.name().toLowerCase())) {
-                return new IncomingUnitException(locator, existing, incoming);
-            } else {
-                return new IncomingTypeException(locator, existing, incoming);
+        if (Configuration.getInstance().getBooleanProperty(CoreConfig.DISABLE_TYPE_UNIT_PROCESSING_CACHE_READ)) {
+            cache.put(locator, key, incoming);
+            return null;
+        } else {
+            String existing = cache.get(locator, key, String.class);
+            // always update the cache. it is smart enough to avoid needless writes.
+            cache.put(locator, key, incoming);
+            boolean differs = existing != null && !incoming.equals(existing);
+            if (differs) {
+                if (key.equals(MetricMetadata.UNIT.name().toLowerCase())) {
+                    return new IncomingUnitException(locator, existing, incoming);
+                } else {
+                    return new IncomingTypeException(locator, existing, incoming);
+                }
             }
+            return null;
         }
-
-        return null;
     }
 
     private Collection<IncomingMetricException> checkMetric(Metric metric) throws CacheException {

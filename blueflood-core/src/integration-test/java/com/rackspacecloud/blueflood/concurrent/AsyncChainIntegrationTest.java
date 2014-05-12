@@ -41,6 +41,7 @@ public class AsyncChainIntegrationTest extends IntegrationTestBase {
         List<Metric> metrics = makeRandomIntMetrics(10000);
         ListenableFuture<Boolean> returnedFuture = asyncChain.apply(metrics);
         returnedFuture.get();
+        // processing of metrics should still not be complete because its async
         Assert.assertFalse(processingComplete);
     }
 }

@@ -40,6 +40,7 @@ public class AsyncChainIntegrationTest extends IntegrationTestBase {
     public void testAsyncChainWithNoOp() throws Exception {
         List<Metric> metrics = makeRandomIntMetrics(10000);
         ListenableFuture<Boolean> returnedFuture = asyncChain.apply(metrics);
+        // get should not block if its async
         returnedFuture.get();
         // processing of metrics should still not be complete because its async
         Assert.assertFalse(processingComplete);

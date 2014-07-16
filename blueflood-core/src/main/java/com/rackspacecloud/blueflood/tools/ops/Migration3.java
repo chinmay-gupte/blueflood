@@ -51,7 +51,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 
-public class Migration3 extends AstyanaxIO{
+public class Migration3 {
 
     private static final Options cliOptions = new Options();
     private static final double VERIFY_PERCENT = 0.005f; // half of one percent.
@@ -169,8 +169,10 @@ public class Migration3 extends AstyanaxIO{
                             mutation.putColumn(c.getName(), c.getByteBufferValue(), ttl);
                             colCount += 1;
                         }
-                        processedKeys.incrementAndGet();
+
                         columnsTransferred.addAndGet(colCount);
+
+                        out.println(String.format("%d copied %d for %s", processedKeys.incrementAndGet(), colCount, locatorLongRow.getKey()));
 
                         try {
                             batch.execute();
@@ -210,23 +212,27 @@ public class Migration3 extends AstyanaxIO{
                     throw new RuntimeException();
 
                 // this will throttle the threads of AllRowsReader
-                while (columnsTransferred.get() / (nowInSeconds() - startClockTime) > rate) {
+                /*
+                while (columnsTransferred.get() / (nowInSeconds() - startClockTime-1) > rate) {
                     try { Thread.sleep(200); } catch (Exception ex) {}
                 }
+                */
                 return true;
             }
         };
 
         try {
-            new AllRowsReader.Builder<Locator, Long>(getKeyspace(), columnFamily)
+            new AllRowsReader.Builder<Locator, Long>(srcKeyspace, columnFamily)
                     .withColumnRange((Long) options.get(FROM), (Long) options.get(TO), false, Integer.MAX_VALUE)
                     .withPageSize(batchSize)
                     .withConcurrencyLevel(readThreads)
+                    .withPartitioner(null)
                     .forEachRow(rowFunction)
                     .build()
                     .call();
         } catch (Exception e) {
             out.println("Error encountered E:" + e);
+            e.printStackTrace();
             System.exit(-1);
         }
     }

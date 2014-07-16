@@ -77,11 +77,13 @@
       <version>${project.version}</version>
     </dependency>
 
+    <!--
     <dependency>
       <artifactId>blueflood-cloudfiles</artifactId>
       <groupId>com.rackspacecloud</groupId>
       <version>${project.version}</version>
     </dependency>
+    -->
     
     <dependency>
       <artifactId>blueflood-dropwizard</artifactId>

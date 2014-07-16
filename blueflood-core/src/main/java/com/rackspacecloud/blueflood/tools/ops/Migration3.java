@@ -134,7 +134,6 @@ public class
         // sentinal that indicates it is time to stop doing everything.
         final AtomicBoolean stopAll = new AtomicBoolean(false);
 
-        final boolean verify = true;
         final Random random = new Random(System.nanoTime());
 
         // indicate what's going to happen.
@@ -150,6 +149,9 @@ public class
 
             @Override
             public Boolean apply(@Nullable final Row<Locator, Long> locatorLongRow) {
+
+                if (stopAll.get())
+                    throw new RuntimeException();
 
                 if (locatorLongRow == null) {
                     out.println("Found a null row");
@@ -180,7 +182,7 @@ public class
 
                         columnsTransferred.addAndGet(colCount);
 
-                        out.println(String.format("%d copied %d for %s at %.2f rpm", processedKeys.incrementAndGet(), colCount, locatorLongRow.getKey(), columnsTransferred.get() / ((nowInMilliSeconds() - startClockTime)/1000f)));
+                        out.println(String.format("%d copied %d for %s at %.2f rps", processedKeys.incrementAndGet(), colCount, locatorLongRow.getKey(), columnsTransferred.get() / ((nowInMilliSeconds() - startClockTime)/1000f)));
 
                         try {
                             batch.execute();
@@ -200,17 +202,17 @@ public class
                                     } catch (ConnectionException ex) {
                                         out.println("There was an error verifying data: " + ex.getMessage());
                                         ex.printStackTrace(out);
-                                        throw new RuntimeException(ex);
+                                        stopAll.set(true);
                                     } catch (Exception ex) {
                                         out.println("Exception encountered while verifying data: " + ex.getMessage() + " " + locatorLongRow.getKey().toString());
-                                        throw new RuntimeException(ex);
+                                        stopAll.set(true);
                                     }
                                 }});
                             }
                         } catch (ConnectionException ex) {
                             out.println("There was an error A: " + ex.getMessage());
                             ex.printStackTrace(out);
-                            throw new RuntimeException(ex);
+                            stopAll.set(true);
                         }
                     }
                 });

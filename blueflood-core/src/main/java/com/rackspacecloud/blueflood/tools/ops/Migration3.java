@@ -13,11 +13,7 @@ import com.netflix.astyanax.connectionpool.impl.ConnectionPoolConfigurationImpl;
 import com.netflix.astyanax.connectionpool.impl.CountingConnectionPoolMonitor;
 import com.netflix.astyanax.connectionpool.impl.FixedRetryBackoffStrategy;
 import com.netflix.astyanax.impl.AstyanaxConfigurationImpl;
-import com.netflix.astyanax.model.ByteBufferRange;
-import com.netflix.astyanax.model.Column;
-import com.netflix.astyanax.model.ColumnFamily;
-import com.netflix.astyanax.model.ColumnList;
-import com.netflix.astyanax.model.Row;
+import com.netflix.astyanax.model.*;
 import com.netflix.astyanax.recipes.reader.AllRowsReader;
 import com.netflix.astyanax.retry.RetryNTimes;
 import com.netflix.astyanax.thrift.ThriftFamilyFactory;
@@ -154,9 +150,6 @@ public class
 
             @Override
             public Boolean apply(@Nullable final Row<Locator, Long> locatorLongRow) {
-                // This will apparently stop everything
-                if(stopAll.get())
-                    throw new RuntimeException();
 
                 if (locatorLongRow == null) {
                     out.println("Found a null row");
@@ -207,17 +200,17 @@ public class
                                     } catch (ConnectionException ex) {
                                         out.println("There was an error verifying data: " + ex.getMessage());
                                         ex.printStackTrace(out);
-                                        stopAll.set(true);
+                                        throw new RuntimeException(ex);
                                     } catch (Exception ex) {
                                         out.println("Exception encountered while verifying data: " + ex.getMessage() + " " + locatorLongRow.getKey().toString());
-                                        stopAll.set(true);
+                                        throw new RuntimeException(ex);
                                     }
                                 }});
                             }
                         } catch (ConnectionException ex) {
                             out.println("There was an error A: " + ex.getMessage());
                             ex.printStackTrace(out);
-                            stopAll.set(true);
+                            throw new RuntimeException(ex);
                         }
                     }
                 });
@@ -236,14 +229,35 @@ public class
                     .withColumnRange((Long) options.get(FROM), (Long) options.get(TO), false, Integer.MAX_VALUE)
                     .withPageSize(batchSize)
                     .withConcurrencyLevel(readThreads)
+                    .withConsistencyLevel(ConsistencyLevel.CL_QUORUM)
                     .withPartitioner(null)
                     .forEachRow(rowFunction)
                     .build()
                     .call();
         } catch (Exception e) {
             out.println("Error encountered E:" + e);
-            e.printStackTrace();
-            System.exit(-1);
+            e.printStackTrace(out);
+            // Wait for copy work to clear up
+            while (destWriteExecutor.getQueue().size() > 0) {
+                try { Thread.currentThread().sleep(1000); } catch (Exception ex) {};
+            }
+
+            out.print("shutting down...");
+            destWriteExecutor.shutdown();
+            try {
+                boolean clean = destWriteExecutor.awaitTermination(10, TimeUnit.MINUTES);
+                if (clean) {
+                    srcContext.shutdown();
+                    dstContext.shutdown();
+                } else {
+                    out.println("uncleanly");
+                    System.exit(-1);
+                }
+            } catch (InterruptedException ex) {
+                ex.printStackTrace(out);
+                System.exit(-1);
+            }
+            out.println("done");
         }
     }
 

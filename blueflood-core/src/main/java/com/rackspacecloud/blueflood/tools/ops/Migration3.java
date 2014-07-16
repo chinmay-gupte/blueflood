@@ -182,7 +182,7 @@ public class
 
                         columnsTransferred.addAndGet(colCount);
 
-                        out.println(String.format("%d copied %d for %s at %.2f rps", processedKeys.incrementAndGet(), colCount, locatorLongRow.getKey(), columnsTransferred.get() / ((nowInMilliSeconds() - startClockTime)/1000f)));
+                        out.println(String.format("%d copied %d for %s at %.2f rps (%s)", processedKeys.incrementAndGet(), colCount, locatorLongRow.getKey(), columnsTransferred.get() / ((nowInMilliSeconds() - startClockTime)/1000f), Thread.currentThread().getName()));
 
                         try {
                             batch.execute();

@@ -1,6 +1,7 @@
 package com.rackspacecloud.blueflood.tools.ops;
 
 import com.google.common.base.Function;
+import com.google.common.collect.Lists;
 import com.google.common.collect.Sets;
 import com.netflix.astyanax.AstyanaxContext;
 import com.netflix.astyanax.ColumnListMutation;
@@ -21,7 +22,6 @@ import com.netflix.astyanax.recipes.reader.AllRowsReader;
 import com.netflix.astyanax.retry.RetryNTimes;
 import com.netflix.astyanax.thrift.ThriftFamilyFactory;
 import com.netflix.astyanax.util.RangeBuilder;
-import com.rackspacecloud.blueflood.io.AstyanaxIO;
 import com.rackspacecloud.blueflood.io.CassandraModel;
 import com.rackspacecloud.blueflood.types.Locator;
 import org.apache.commons.cli.CommandLine;
@@ -51,10 +51,10 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 
-public class Migration3 {
+public class
+        Migration3 {
 
     private static final Options cliOptions = new Options();
-    private static final double VERIFY_PERCENT = 0.005f; // half of one percent.
 
     private static final String SRC = "src";
     private static final String DST = "dst";
@@ -68,6 +68,9 @@ public class Migration3 {
     private static final String VERIFY = "verify";
     private static final String DISCOVER = "discover";
     private static final String RATE = "rate";
+    private static final String SAME = "SAME".intern();
+    private static final String RENEW = "RENEW".intern();
+    private static final String NONE = "NONE".intern();
 
     private static final PrintStream out = System.out;
 
@@ -86,8 +89,8 @@ public class Migration3 {
         cliOptions.addOption(OptionBuilder.hasArg().withDescription("[optional] maximum number of columns per/second to transfer. default=500").create(RATE));
     }
 
-    private static long nowInSeconds() {
-        return System.currentTimeMillis() / 1000;
+    private static long nowInMilliSeconds() {
+        return System.currentTimeMillis();
     }
 
     public static void main(String args[]) {
@@ -98,9 +101,10 @@ public class Migration3 {
         final int readThreads = (Integer)options.get(READ_THREADS);
         final int writeThreads = (Integer)options.get(WRITE_THREADS);
         final int batchSize = (Integer)options.get(BATCH_SIZE);
-        final int ttl = (Integer)options.get(TTL);
+        final String ttl = (String)options.get(TTL);
         final int rate = (Integer)options.get(RATE);
         NodeDiscoveryType discovery = (NodeDiscoveryType)options.get(DISCOVER);
+        final double verifyPercent = (Double)options.get(VERIFY);
 
         // connect to src cluster.
         String[] srcParts = options.get(SRC).toString().split(":", -1);
@@ -113,7 +117,7 @@ public class Migration3 {
         final Keyspace dstKeyspace = dstContext.getEntity();
 
         final AtomicLong columnsTransferred = new AtomicLong(0);
-        final long startClockTime = nowInSeconds();
+        final long startClockTime = nowInMilliSeconds();
 
         // establish column range.
         final ByteBufferRange range = new RangeBuilder()
@@ -134,7 +138,7 @@ public class Migration3 {
         // sentinal that indicates it is time to stop doing everything.
         final AtomicBoolean stopAll = new AtomicBoolean(false);
 
-        final boolean verify = (Boolean)options.get(VERIFY);
+        final boolean verify = true;
         final Random random = new Random(System.nanoTime());
 
         // indicate what's going to happen.
@@ -144,12 +148,15 @@ public class Migration3 {
                 new Date((Long)options.get(FROM)),
                 new Date((Long)options.get(TO))));
 
-        final ColumnFamily<Locator, Long> columnFamily = (ColumnFamily<Locator, Long>)options.get(COLUMN_FAMILY);
+        final CassandraModel.MetricColumnFamily columnFamily = (CassandraModel.MetricColumnFamily)options.get(COLUMN_FAMILY);
 
         Function<Row<Locator, Long>, Boolean> rowFunction = new Function<Row<Locator, Long>, Boolean>() {
 
             @Override
             public Boolean apply(@Nullable final Row<Locator, Long> locatorLongRow) {
+                // This will apparently stop everything
+                if(stopAll.get())
+                    throw new RuntimeException();
 
                 if (locatorLongRow == null) {
                     out.println("Found a null row");
@@ -159,24 +166,32 @@ public class Migration3 {
                 destWriteExecutor.submit(new Runnable() {
                     public void run() {
 
+                        int safetyTtlInSeconds = 5 * (int)columnFamily.getDefaultTTL().toSeconds();
+                        int nowInSeconds = (int)(System.currentTimeMillis() / 1000);
+
                         // copy the column.
                         MutationBatch batch = dstKeyspace.prepareMutationBatch();
                         ColumnListMutation<Long> mutation = batch.withRow(columnFamily,locatorLongRow.getKey());
 
-                        assert ttl != 0;
                         long colCount = 0;
                         for (Column<Long> c : locatorLongRow.getColumns()) {
-                            mutation.putColumn(c.getName(), c.getByteBufferValue(), ttl);
+                            if (ttl != NONE) {
+                                // ttl will either be the safety value or the difference between the safety value and the age of the column.
+                                int ttlSeconds = ttl == RENEW ? safetyTtlInSeconds : (safetyTtlInSeconds - nowInSeconds + (int)(c.getName()/1000));
+                                mutation.putColumn(c.getName(), c.getByteBufferValue(), ttlSeconds);
+                            } else {
+                                mutation.putColumn(c.getName(), c.getByteBufferValue());
+                            }
                             colCount += 1;
                         }
 
                         columnsTransferred.addAndGet(colCount);
 
-                        out.println(String.format("%d copied %d for %s", processedKeys.incrementAndGet(), colCount, locatorLongRow.getKey()));
+                        out.println(String.format("%d copied %d for %s at %.2f rpm", processedKeys.incrementAndGet(), colCount, locatorLongRow.getKey(), columnsTransferred.get() / ((nowInMilliSeconds() - startClockTime)/1000f)));
 
                         try {
                             batch.execute();
-                            if (verify && random.nextFloat() < VERIFY_PERCENT) {
+                            if (colCount > 0 && random.nextFloat() < verifyPercent) {
                                 verifyExecutor.submit(new Runnable() {public void run() {
                                     try {
                                         ColumnList<Long> srcData = srcKeyspace.prepareQuery(columnFamily).getKey(locatorLongRow.getKey())
@@ -207,16 +222,11 @@ public class Migration3 {
                     }
                 });
 
-                // This will apparently stop everything
-                if(stopAll.get())
-                    throw new RuntimeException();
-
                 // this will throttle the threads of AllRowsReader
-                /*
-                while (columnsTransferred.get() / (nowInSeconds() - startClockTime-1) > rate) {
+                while (columnsTransferred.get() / ((nowInMilliSeconds() - startClockTime)/1000f) > rate) {
                     try { Thread.sleep(200); } catch (Exception ex) {}
                 }
-                */
+
                 return true;
             }
         };
@@ -317,12 +327,18 @@ public class Migration3 {
             CassandraModel.MetricColumnFamily columnFamily = (CassandraModel.MetricColumnFamily)nameToCf.get(line.getOptionValue(COLUMN_FAMILY));
             options.put(COLUMN_FAMILY, columnFamily);
 
-            options.put(TTL, line.hasOption(TTL) ? Integer.parseInt(line.getOptionValue(TTL)) : (int)(5 * columnFamily.getDefaultTTL().toSeconds()));
+            List<String> validTtlStrings = Lists.newArrayList(SAME, RENEW, NONE);
+            String ttlString = line.hasOption(TTL) ? line.getOptionValue(TTL) : SAME;
+            if (!validTtlStrings.contains(ttlString)) {
+                throw new ParseException("Invalid TTL: " + ttlString);
+            }
+
+            options.put(TTL, ttlString);
 
             options.put(READ_THREADS, line.hasOption(READ_THREADS) ? Integer.parseInt(line.getOptionValue(READ_THREADS)) : 1);
             options.put(WRITE_THREADS, line.hasOption(WRITE_THREADS) ? Integer.parseInt(line.getOptionValue(WRITE_THREADS)) : 1);
 
-            options.put(VERIFY, line.hasOption(VERIFY));
+            options.put(VERIFY, line.hasOption(VERIFY) ? Double.parseDouble(line.getOptionValue(VERIFY)) : 0.005d);
 
             options.put(DISCOVER, line.hasOption(DISCOVER) ? NodeDiscoveryType.RING_DESCRIBE : NodeDiscoveryType.NONE);
             options.put(RATE, line.hasOption(RATE) ? Integer.parseInt(line.getOptionValue(RATE)) : 500);

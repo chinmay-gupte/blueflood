@@ -11,6 +11,7 @@ import com.netflix.astyanax.MutationBatch;
 import com.netflix.astyanax.connectionpool.Host;
 import com.netflix.astyanax.connectionpool.NodeDiscoveryType;
 import com.netflix.astyanax.connectionpool.exceptions.ConnectionException;
+import com.netflix.astyanax.connectionpool.exceptions.TransportException;
 import com.netflix.astyanax.connectionpool.impl.ConnectionPoolConfigurationImpl;
 import com.netflix.astyanax.connectionpool.impl.ConnectionPoolType;
 import com.netflix.astyanax.connectionpool.impl.CountingConnectionPoolMonitor;
@@ -169,7 +170,7 @@ public class Migration3 {
                         for (Column<Long> c : locatorLongRow.getColumns()) {
                             if (ttl != NONE) {
                                 // ttl will either be the safety value or the difference between the safety value and the age of the column.
-                                int ttlSeconds = ttl == RENEW ? safetyTtlInSeconds : (safetyTtlInSeconds - nowInSeconds + (int)(c.getTimestamp()/1000));
+                                int ttlSeconds = ttl == RENEW ? safetyTtlInSeconds : (safetyTtlInSeconds - nowInSeconds + (int)(c.getName()/1000));
                                 mutation.putColumn(c.getName(), c.getByteBufferValue(), ttlSeconds);
                             } else {
                                 mutation.putColumn(c.getName(), c.getByteBufferValue());
@@ -207,6 +208,10 @@ public class Migration3 {
                                     }
                                 }});
                             }
+                        } catch (TransportException ex) {
+                            out.println("Transport exception encountered. pass for now");
+                            ex.printStackTrace(out);
+                            return;
                         } catch (ConnectionException ex) {
                             out.println("There was an error A: " + ex.getMessage());
                             ex.printStackTrace(out);

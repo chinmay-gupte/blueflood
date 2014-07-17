@@ -155,6 +155,8 @@ public class Migration3 {
 
                 destWriteExecutor.submit(new Runnable() {
                     public void run() {
+                        if (stopAll.get())
+                            return;
 
                         int safetyTtlInSeconds = 5 * (int)columnFamily.getDefaultTTL().toSeconds();
                         int nowInSeconds = (int)(System.currentTimeMillis() / 1000);
@@ -177,7 +179,7 @@ public class Migration3 {
 
                         columnsTransferred.addAndGet(colCount);
 
-                        out.println(String.format("%d copied %d for %s at %.2f rps (%s)", processedKeys.incrementAndGet(), colCount, locatorLongRow.getKey(), columnsTransferred.get() / ((nowInMilliSeconds() - startClockTime)/1000f), Thread.currentThread().getName()));
+                        out.println(String.format("%d copied %d for %s at %.2f rps (%s)", processedKeys.incrementAndGet(), colCount, locatorLongRow.getKey(), processedKeys.get() / ((nowInMilliSeconds() - startClockTime)/1000f), Thread.currentThread().getName()));
 
                         try {
                             batch.execute();
@@ -214,7 +216,12 @@ public class Migration3 {
                 });
 
                 // this will throttle the read threads of AllRowsReader
-                while (processedKeys.get() / ((nowInMilliSeconds() - startClockTime)/1000d) > rate) {
+                while (destWriteExecutor.getQueue().size() > rate) {
+
+                    if (stopAll.get())
+                        throw new RuntimeException();
+
+                    out.println(String.format("Rate limit throttling. %s being put to sleep", Thread.currentThread().getName()));
                     try { Thread.sleep(200); } catch (Exception ex) {}
                 }
 
@@ -223,27 +230,29 @@ public class Migration3 {
         };
 
         try {
-            new AllRowsReader.Builder<Locator, Long>(srcKeyspace, columnFamily)
-                    .withColumnRange((Long) options.get(FROM), (Long) options.get(TO), false, Integer.MAX_VALUE)
-                    .withPageSize(batchSize)
-                    .withConcurrencyLevel(readThreads)
-                    .withConsistencyLevel(ConsistencyLevel.CL_QUORUM)
-                    .withPartitioner(null)
-                    .forEachRow(rowFunction)
-                    .build()
-                    .call();
+            Boolean result = new AllRowsReader.Builder<Locator, Long>(srcKeyspace, columnFamily)
+                                    .withColumnRange((Long) options.get(FROM), (Long) options.get(TO), false, Integer.MAX_VALUE)
+                                    .withPageSize(batchSize)
+                                    .withConcurrencyLevel(readThreads)
+                                    .withConsistencyLevel(ConsistencyLevel.CL_QUORUM)
+                                    .withPartitioner(null)
+                                    .forEachRow(rowFunction)
+                                    .build()
+                                    .call();
         } catch (Exception e) {
             out.println("Error encountered E:" + e);
             e.printStackTrace(out);
+        } finally {
             // Wait for copy work to clear up
             while (destWriteExecutor.getQueue().size() > 0) {
+                out.println("Waiting for write thread pool to clear up");
                 try { Thread.currentThread().sleep(1000); } catch (Exception ex) {};
             }
 
             out.print("shutting down...");
             destWriteExecutor.shutdown();
             try {
-                boolean clean = destWriteExecutor.awaitTermination(10, TimeUnit.MINUTES);
+                boolean clean = destWriteExecutor.awaitTermination(5, TimeUnit.MINUTES);
                 if (clean) {
                     srcContext.shutdown();
                     dstContext.shutdown();
@@ -255,7 +264,7 @@ public class Migration3 {
                 ex.printStackTrace(out);
                 System.exit(-1);
             }
-            out.println("done");
+            out.println("Done successfully");
             System.exit(1);
         }
     }
@@ -365,7 +374,7 @@ public class Migration3 {
             options.put(READ_THREADS, line.hasOption(READ_THREADS) ? Integer.parseInt(line.getOptionValue(READ_THREADS)) : 1);
             options.put(WRITE_THREADS, line.hasOption(WRITE_THREADS) ? Integer.parseInt(line.getOptionValue(WRITE_THREADS)) : 1);
             options.put(VERIFY, line.hasOption(VERIFY) ? Double.parseDouble(line.getOptionValue(VERIFY)) : 0.005d);
-            options.put(RATE, line.hasOption(RATE) ? Integer.parseInt(line.getOptionValue(RATE)) : 500);
+            options.put(RATE, line.hasOption(RATE) ? Integer.parseInt(line.getOptionValue(RATE)) : 200);
         } catch (ParseException ex) {
             HelpFormatter helpFormatter = new HelpFormatter();
             helpFormatter.printHelp("bf-migrate", cliOptions);

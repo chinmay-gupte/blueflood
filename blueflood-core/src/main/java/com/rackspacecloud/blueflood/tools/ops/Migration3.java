@@ -1,15 +1,18 @@
 package com.rackspacecloud.blueflood.tools.ops;
 
 import com.google.common.base.Function;
+import com.google.common.base.Supplier;
 import com.google.common.collect.Lists;
 import com.google.common.collect.Sets;
 import com.netflix.astyanax.AstyanaxContext;
 import com.netflix.astyanax.ColumnListMutation;
 import com.netflix.astyanax.Keyspace;
 import com.netflix.astyanax.MutationBatch;
+import com.netflix.astyanax.connectionpool.Host;
 import com.netflix.astyanax.connectionpool.NodeDiscoveryType;
 import com.netflix.astyanax.connectionpool.exceptions.ConnectionException;
 import com.netflix.astyanax.connectionpool.impl.ConnectionPoolConfigurationImpl;
+import com.netflix.astyanax.connectionpool.impl.ConnectionPoolType;
 import com.netflix.astyanax.connectionpool.impl.CountingConnectionPoolMonitor;
 import com.netflix.astyanax.connectionpool.impl.FixedRetryBackoffStrategy;
 import com.netflix.astyanax.impl.AstyanaxConfigurationImpl;
@@ -33,13 +36,7 @@ import org.apache.log4j.Logger;
 import javax.annotation.Nullable;
 import javax.xml.bind.DatatypeConverter;
 import java.io.PrintStream;
-import java.util.Collections;
-import java.util.Date;
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Map;
-import java.util.Random;
+import java.util.*;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
@@ -47,13 +44,12 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 
-public class
-        Migration3 {
-
+public class Migration3 {
     private static final Options cliOptions = new Options();
 
-    private static final String SRC = "src";
-    private static final String DST = "dst";
+    private static final String DST_CLUSTER = "dcluster";
+    private static final String SRC_CLUSTER = "scluster";
+    private static final String KEYSPACE = "keyspace";
     private static final String FROM = "from";
     private static final String TO = "to";
     private static final String COLUMN_FAMILY = "cf";
@@ -62,17 +58,20 @@ public class
     private static final String READ_THREADS = "readthreads";
     private static final String BATCH_SIZE = "batchsize";
     private static final String VERIFY = "verify";
-    private static final String DISCOVER = "discover";
     private static final String RATE = "rate";
     private static final String SAME = "SAME".intern();
     private static final String RENEW = "RENEW".intern();
     private static final String NONE = "NONE".intern();
 
+    private static final Integer VERIFICATION_THREADS = 1;
+    private static final int ADDITIONAL_CONNECTIONS_PER_HOST = 6;
+
     private static final PrintStream out = System.out;
 
     static {
-        cliOptions.addOption(OptionBuilder.isRequired().hasArg(true).withValueSeparator(',').withDescription("[required] Source cassandra cluster (host:port:keyspace).").create(SRC));
-        cliOptions.addOption(OptionBuilder.isRequired().hasArg(true).withValueSeparator(',').withDescription("[required] Destination cassandra cluster (host:port:keyspace).").create(DST));
+        cliOptions.addOption(OptionBuilder.isRequired().hasArg(true).withValueSeparator(',').withDescription("[required] Source cassandra cluster (host:port).").create(SRC_CLUSTER));
+        cliOptions.addOption(OptionBuilder.isRequired().hasArg(true).withValueSeparator(',').withDescription("[required] Destination cassandra cluster (host:port).").create(DST_CLUSTER));
+        cliOptions.addOption(OptionBuilder.hasArg().withDescription("[optional] Keyspace (default=data)").create(KEYSPACE));
         cliOptions.addOption(OptionBuilder.hasArg().withDescription("[optional] ISO 6801 datetime (or millis since epoch) of when to start migrating data. defaults to one year ago.").create(FROM));
         cliOptions.addOption(OptionBuilder.hasArg().withDescription("[optional] ISO 6801 datetime (or millis since epoch) Datetime of when to stop migrating data. defaults to right now.").create(TO));
         cliOptions.addOption(OptionBuilder.isRequired().hasArg().withValueSeparator(',').withDescription("[required] Which column family to migrate").create(COLUMN_FAMILY));
@@ -81,8 +80,7 @@ public class
         cliOptions.addOption(OptionBuilder.hasArg().withDescription("[optional] number of write threads to use. default=1").create(WRITE_THREADS));
         cliOptions.addOption(OptionBuilder.hasArg().withDescription("[optional] number of rows to read per query. default=100").create(BATCH_SIZE));
         cliOptions.addOption(OptionBuilder.withDescription("[optional] verify a sampling 0.5% of data copied").create(VERIFY));
-        cliOptions.addOption(OptionBuilder.withDescription("[optional] discover and query other cassandra nodes").create(DISCOVER));
-        cliOptions.addOption(OptionBuilder.hasArg().withDescription("[optional] maximum number of columns per/second to transfer. default=500").create(RATE));
+        cliOptions.addOption(OptionBuilder.hasArg().withDescription("[optional] maximum number of rows per/second to transfer. default=500").create(RATE));
     }
 
     private static long nowInMilliSeconds() {
@@ -99,17 +97,14 @@ public class
         final int batchSize = (Integer)options.get(BATCH_SIZE);
         final String ttl = (String)options.get(TTL);
         final int rate = (Integer)options.get(RATE);
-        NodeDiscoveryType discovery = (NodeDiscoveryType)options.get(DISCOVER);
         final double verifyPercent = (Double)options.get(VERIFY);
 
         // connect to src cluster.
-        String[] srcParts = options.get(SRC).toString().split(":", -1);
-        final AstyanaxContext<Keyspace> srcContext = connect(srcParts[0], Integer.parseInt(srcParts[1]), srcParts[2], readThreads, discovery);
+        final AstyanaxContext<Keyspace> srcContext = connect(options.get(SRC_CLUSTER).toString(), options.get(KEYSPACE).toString(), readThreads);
         final Keyspace srcKeyspace = srcContext.getEntity();
 
         // connect to dst cluster.
-        String[] dstParts = options.get(DST).toString().split(":", -1);
-        final AstyanaxContext<Keyspace> dstContext = connect(dstParts[0], Integer.parseInt(dstParts[1]), dstParts[2], writeThreads, discovery);
+        final AstyanaxContext<Keyspace> dstContext = connect(options.get(DST_CLUSTER).toString(), options.get(KEYSPACE).toString(), writeThreads);
         final Keyspace dstKeyspace = dstContext.getEntity();
 
         final AtomicLong columnsTransferred = new AtomicLong(0);
@@ -126,7 +121,7 @@ public class
                 new LinkedBlockingQueue<Runnable>());
 
         // this threadpool performs verifications.
-        final ThreadPoolExecutor verifyExecutor = new ThreadPoolExecutor(1, 1, 0L, TimeUnit.MILLISECONDS, new LinkedBlockingQueue<Runnable>());
+        final ThreadPoolExecutor verifyExecutor = new ThreadPoolExecutor(VERIFICATION_THREADS, VERIFICATION_THREADS, 0L, TimeUnit.MILLISECONDS, new LinkedBlockingQueue<Runnable>());
 
         // keep track of the number of keys that have been copied.
         final AtomicInteger processedKeys = new AtomicInteger(0);
@@ -138,8 +133,8 @@ public class
 
         // indicate what's going to happen.
         out.println(String.format("Will process metrics from %s to %s for dates %s to %s",
-                options.get(SRC),
-                options.get(DST),
+                options.get(SRC_CLUSTER),
+                options.get(DST_CLUSTER),
                 new Date((Long)options.get(FROM)),
                 new Date((Long)options.get(TO))));
 
@@ -149,7 +144,7 @@ public class
 
             @Override
             public Boolean apply(@Nullable final Row<Locator, Long> locatorLongRow) {
-
+                // This is the best point to stop execution. This will stop the AllRowsReader ----> dstThreadPoolExecutor
                 if (stopAll.get())
                     throw new RuntimeException();
 
@@ -172,7 +167,7 @@ public class
                         for (Column<Long> c : locatorLongRow.getColumns()) {
                             if (ttl != NONE) {
                                 // ttl will either be the safety value or the difference between the safety value and the age of the column.
-                                int ttlSeconds = ttl == RENEW ? safetyTtlInSeconds : (safetyTtlInSeconds - nowInSeconds + (int)(c.getName()/1000));
+                                int ttlSeconds = ttl == RENEW ? safetyTtlInSeconds : (safetyTtlInSeconds - nowInSeconds + (int)(c.getTimestamp()/1000));
                                 mutation.putColumn(c.getName(), c.getByteBufferValue(), ttlSeconds);
                             } else {
                                 mutation.putColumn(c.getName(), c.getByteBufferValue());
@@ -199,6 +194,7 @@ public class
                                                 .getResult();
 
                                         checkSameResults(srcData, dstData);
+                                        out.println(String.format("Verified migration for %s", locatorLongRow.getKey()));
                                     } catch (ConnectionException ex) {
                                         out.println("There was an error verifying data: " + ex.getMessage());
                                         ex.printStackTrace(out);
@@ -217,8 +213,8 @@ public class
                     }
                 });
 
-                // this will throttle the threads of AllRowsReader
-                while (columnsTransferred.get() / ((nowInMilliSeconds() - startClockTime)/1000f) > rate) {
+                // this will throttle the read threads of AllRowsReader
+                while (processedKeys.get() / ((nowInMilliSeconds() - startClockTime)/1000d) > rate) {
                     try { Thread.sleep(200); } catch (Exception ex) {}
                 }
 
@@ -260,6 +256,7 @@ public class
                 System.exit(-1);
             }
             out.println("done");
+            System.exit(1);
         }
     }
 
@@ -294,26 +291,39 @@ public class
         }
     }
 
-    private static AstyanaxContext<Keyspace> connect(String host, int port, String keyspace, int threads, NodeDiscoveryType discovery) {
+    private static AstyanaxContext<Keyspace> connect(String clusterSpec, String keyspace, int threads) {
+        out.print(String.format("Connecting to %s:%s...", clusterSpec, keyspace));
+        final List<Host> hosts = new ArrayList<Host>();
+        for (String hostSpec : clusterSpec.split(",", -1)) {
+            hosts.add(new Host(Host.parseHostFromHostAndPort(hostSpec), Host.parsePortFromHostAndPort(hostSpec, -1)));
+        }
+        int maxConsPerHost = Math.max(1, threads / hosts.size()) + ADDITIONAL_CONNECTIONS_PER_HOST;
         AstyanaxContext<Keyspace> context = new AstyanaxContext.Builder()
                 .forKeyspace(keyspace)
+                .withHostSupplier(new Supplier<List<Host>>() {
+                    @Override
+                    public List<Host> get() {
+                        return hosts;
+                    }
+                })
                 .withAstyanaxConfiguration(new AstyanaxConfigurationImpl()
-                        .setDiscoveryType(discovery)
-                        .setRetryPolicy(new RetryNTimes(10)))
+                        .setDiscoveryType(NodeDiscoveryType.NONE)
+                        .setConnectionPoolType(ConnectionPoolType.ROUND_ROBIN)
+                        .setRetryPolicy(new RetryNTimes(3)))
 
-                .withConnectionPoolConfiguration(new ConnectionPoolConfigurationImpl(host + ":" + keyspace)
+                .withConnectionPoolConfiguration(new ConnectionPoolConfigurationImpl(keyspace)
                         .setMaxConns(threads * 2)
-                        .setSeeds(host)
-                        .setPort(port)
+                        .setMaxConnsPerHost(maxConsPerHost)
+                        .setConnectTimeout(2000)
+                        .setSocketTimeout(5000 * 100)
                         .setRetryBackoffStrategy(new FixedRetryBackoffStrategy(1000, 1000)))
                 .withConnectionPoolMonitor(new CountingConnectionPoolMonitor())
                 .buildKeyspace(ThriftFamilyFactory.getInstance());
         context.start();
+        out.println("done");
         return context;
     }
 
-    // construct a well-formed options map. There should be no guesswork/checking for null after this point. All defaults
-    // should be populated.
     private static Map<String, Object> parseOptions(String[] args) {
         final GnuParser parser = new GnuParser();
         final Map<String, Object> options = new HashMap<String, Object>();
@@ -321,8 +331,9 @@ public class
             final long now = System.currentTimeMillis();
             CommandLine line = parser.parse(cliOptions, args);
 
-            options.put(SRC, line.getOptionValue(SRC));
-            options.put(DST, line.getOptionValue(DST));
+            options.put(DST_CLUSTER, line.getOptionValue(DST_CLUSTER));
+            options.put(SRC_CLUSTER, line.getOptionValue(SRC_CLUSTER));
+            options.put(KEYSPACE, line.hasOption(KEYSPACE) ? line.getOptionValue(KEYSPACE) : "DATA");
 
             // default range is one year ago until now.
             options.put(FROM, line.hasOption(FROM) ? parseDateTime(line.getOptionValue(FROM)) : now-(365L*24L*60L*60L*1000L));
@@ -345,20 +356,16 @@ public class
 
             List<String> validTtlStrings = Lists.newArrayList(SAME, RENEW, NONE);
             String ttlString = line.hasOption(TTL) ? line.getOptionValue(TTL) : SAME;
+
             if (!validTtlStrings.contains(ttlString)) {
                 throw new ParseException("Invalid TTL: " + ttlString);
             }
 
             options.put(TTL, ttlString);
-
             options.put(READ_THREADS, line.hasOption(READ_THREADS) ? Integer.parseInt(line.getOptionValue(READ_THREADS)) : 1);
             options.put(WRITE_THREADS, line.hasOption(WRITE_THREADS) ? Integer.parseInt(line.getOptionValue(WRITE_THREADS)) : 1);
-
             options.put(VERIFY, line.hasOption(VERIFY) ? Double.parseDouble(line.getOptionValue(VERIFY)) : 0.005d);
-
-            options.put(DISCOVER, line.hasOption(DISCOVER) ? NodeDiscoveryType.RING_DESCRIBE : NodeDiscoveryType.NONE);
             options.put(RATE, line.hasOption(RATE) ? Integer.parseInt(line.getOptionValue(RATE)) : 500);
-
         } catch (ParseException ex) {
             HelpFormatter helpFormatter = new HelpFormatter();
             helpFormatter.printHelp("bf-migrate", cliOptions);
@@ -372,7 +379,6 @@ public class
         try {
             return Long.parseLong(s);
         } catch (NumberFormatException ex) {
-            // convert from a ISO 6801 date String.
             return DatatypeConverter.parseDateTime(s).getTime().getTime();
         }
     }

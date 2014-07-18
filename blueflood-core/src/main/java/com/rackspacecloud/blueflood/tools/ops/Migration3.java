@@ -159,6 +159,44 @@ public class Migration3 {
                         if (stopAll.get())
                             return;
 
+                        ColumnList<Long> srcCols = locatorLongRow.getColumns();
+                        int stopPoint = srcCols.size();
+
+                        // Some values might be already stored. This block migrates only the values which do not exist
+                        if (columnFamily.equals(CassandraModel.CF_METRICS_STRING)) {
+                            try {
+                                ColumnList<Long> query = dstKeyspace
+                                        .prepareQuery(CassandraModel.CF_METRICS_STRING)
+                                        .getKey(locatorLongRow.getKey())
+                                        .withColumnRange(range)
+                                        .execute()
+                                        .getResult();
+
+                                int existingDataSize = query.size();
+
+                                while (--stopPoint >= 0 && --existingDataSize >= 0) {
+                                    if (query.getColumnByIndex(existingDataSize).getStringValue().equals(srcCols.getColumnByIndex(stopPoint).getStringValue()))
+                                        continue;
+                                    else
+                                        break;
+                                }
+
+                                if (stopPoint == -1 && existingDataSize >= 0) {
+                                    out.println("This is impossible as we have been ingesting in dcass for a loooong time");
+                                    stopAll.set(true);
+                                    return;
+                                } else if (stopPoint == -1 && existingDataSize == -1) {
+                                    out.println("All cols already exist. Nothing to copy");
+                                }
+
+                            } catch (ConnectionException e) {
+                                out.println("Connection exception while string optimization query");
+                                e.printStackTrace();
+                                stopAll.set(true);
+                                return;
+                            }
+                        }
+
                         int safetyTtlInSeconds = 5 * (int)columnFamily.getDefaultTTL().toSeconds();
                         int nowInSeconds = (int)(System.currentTimeMillis() / 1000);
 
@@ -166,25 +204,23 @@ public class Migration3 {
                         MutationBatch batch = dstKeyspace.prepareMutationBatch();
                         ColumnListMutation<Long> mutation = batch.withRow(columnFamily,locatorLongRow.getKey());
 
-                        long colCount = 0;
-                        for (Column<Long> c : locatorLongRow.getColumns()) {
+                        for (int i = 0; i < stopPoint; i++) {
                             if (ttl != NONE) {
                                 // ttl will either be the safety value or the difference between the safety value and the age of the column.
-                                int ttlSeconds = ttl == RENEW ? safetyTtlInSeconds : (safetyTtlInSeconds - nowInSeconds + (int)(c.getName()/1000));
-                                mutation.putColumn(c.getName(), c.getByteBufferValue(), ttlSeconds);
+                                int ttlSeconds = ttl == RENEW ? safetyTtlInSeconds : (safetyTtlInSeconds - nowInSeconds + (int)(srcCols.getColumnByIndex(i).getName()/1000));
+                                mutation.putColumn(srcCols.getColumnByIndex(i).getName(), srcCols.getColumnByIndex(i).getByteArrayValue(), ttlSeconds);
                             } else {
-                                mutation.putColumn(c.getName(), c.getByteBufferValue());
+                                mutation.putColumn(srcCols.getColumnByIndex(i).getName(), srcCols.getColumnByIndex(i).getByteArrayValue());
                             }
-                            colCount += 1;
                         }
 
-                        columnsTransferred.addAndGet(colCount);
+                        columnsTransferred.addAndGet(stopPoint + 1);
 
-                        out.println(String.format("%d copied %d for %s at %.2f rps (%s)", processedKeys.incrementAndGet(), colCount, locatorLongRow.getKey(), processedKeys.get() / ((nowInMilliSeconds() - startClockTime)/1000f), Thread.currentThread().getName()));
+                        out.println(String.format("%d copied %d for %s at %.2f rps (%s)", processedKeys.incrementAndGet(), stopPoint + 1, locatorLongRow.getKey(), processedKeys.get() / ((nowInMilliSeconds() - startClockTime)/1000f), Thread.currentThread().getName()));
 
                         try {
                             batch.execute();
-                            if (colCount > 0 && random.nextFloat() < verifyPercent) {
+                            if (stopPoint + 1 > 0 && random.nextFloat() < verifyPercent) {
                                 verifyExecutor.submit(new Runnable() {public void run() {
                                     try {
                                         ColumnList<Long> srcData = srcKeyspace.prepareQuery(columnFamily).getKey(locatorLongRow.getKey())
@@ -209,7 +245,7 @@ public class Migration3 {
                                 }});
                             }
                         } catch (TransportException ex) {
-                            out.println("Transport exception encountered. pass for now");
+                            out.println(String.format("Transport exception encountered. pass for now. Locator : %s", locatorLongRow.getKey()));
                             ex.printStackTrace(out);
                             return;
                         } catch (ConnectionException ex) {

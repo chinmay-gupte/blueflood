@@ -160,7 +160,7 @@ public class Migration3 {
                             return;
 
                         ColumnList<Long> srcCols = locatorLongRow.getColumns();
-                        int stopPoint = srcCols.size();
+                        int stopPoint = srcCols.size() - 1;
 
                         // Some values might be already stored. This block migrates only the values which do not exist
                         if (columnFamily.equals(CassandraModel.CF_METRICS_STRING)) {
@@ -172,21 +172,25 @@ public class Migration3 {
                                         .execute()
                                         .getResult();
 
-                                int existingDataSize = query.size();
+                                int existingDataSize = query.size() - 1;
 
-                                while (--stopPoint >= 0 && --existingDataSize >= 0) {
-                                    if (query.getColumnByIndex(existingDataSize).getStringValue().equals(srcCols.getColumnByIndex(stopPoint).getStringValue()))
-                                        continue;
+                                while (stopPoint >= 0 && existingDataSize >= 0) {
+                                    if (query.getColumnByIndex(existingDataSize).getStringValue().equals(srcCols.getColumnByIndex(stopPoint).getStringValue())) {
+                                        stopPoint--;
+                                        existingDataSize--;
+                                    }
                                     else
                                         break;
                                 }
 
                                 if (stopPoint == -1 && existingDataSize >= 0) {
-                                    out.println("This is impossible as we have been ingesting in dcass for a loooong time");
+                                    out.println(String.format("This is impossible as we have been ingesting in dcass for a loooong time", locatorLongRow.getKey()));
                                     stopAll.set(true);
                                     return;
                                 } else if (stopPoint == -1 && existingDataSize == -1) {
-                                    out.println("All cols already exist. Nothing to copy");
+                                    out.println(String.format("All cols already exist. Nothing to copy %s", locatorLongRow.getKey()));
+                                } else {
+                                    out.println(String.format("Copying data for %s, %d ---> %d", locatorLongRow.getKey(), stopPoint, existingDataSize));
                                 }
 
                             } catch (ConnectionException e) {
@@ -204,7 +208,7 @@ public class Migration3 {
                         MutationBatch batch = dstKeyspace.prepareMutationBatch();
                         ColumnListMutation<Long> mutation = batch.withRow(columnFamily,locatorLongRow.getKey());
 
-                        for (int i = 0; i < stopPoint; i++) {
+                        for (int i = 0; i < stopPoint+1; i++) {
                             if (ttl != NONE) {
                                 // ttl will either be the safety value or the difference between the safety value and the age of the column.
                                 int ttlSeconds = ttl == RENEW ? safetyTtlInSeconds : (safetyTtlInSeconds - nowInSeconds + (int)(srcCols.getColumnByIndex(i).getName()/1000));
@@ -314,9 +318,10 @@ public class Migration3 {
         if (x.size() != y.size()) {
             throw new Exception("source and destination column lengths do not match");
         }
+        /*
         if (Sets.difference(new HashSet<Long>(x.getColumnNames()), new HashSet<Long>(y.getColumnNames())).size() != 0) {
             throw new Exception("source and destination did not contain the same column names");
-        }
+        }*/
 
         for (int i = 0; i < x.size(); i++) {
             byte[] bx = x.getColumnByIndex(i).getByteArrayValue();

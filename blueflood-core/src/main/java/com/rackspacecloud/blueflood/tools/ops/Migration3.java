@@ -184,15 +184,19 @@ public class Migration3 {
                                 }
 
                                 if (stopPoint == -1 && existingDataSize >= 0) {
-                                    out.println(String.format("This is impossible as we have been ingesting in dcass for a loooong time", locatorLongRow.getKey()));
+                                    out.println(String.format("This is impossible as we have been ingesting in dcass for a loooong time. Locator: %s", locatorLongRow.getKey()));
                                     stopAll.set(true);
                                     return;
                                 } else if (stopPoint == -1 && existingDataSize == -1) {
                                     out.println(String.format("All cols already exist. Nothing to copy %s", locatorLongRow.getKey()));
+                                    return;
+                                } else if (stopPoint >= 0 && existingDataSize >= 0) {
+                                    out.println(String.format("We have been double writing for some time, what this means is that there is no overlap at the end for some values. Locator: %s", locatorLongRow.getKey()));
+                                    stopAll.set(true);
+                                    return;
                                 } else {
                                     out.println(String.format("Copying data for %s, %d ---> %d", locatorLongRow.getKey(), stopPoint, existingDataSize));
                                 }
-
                             } catch (ConnectionException e) {
                                 out.println("Connection exception while string optimization query");
                                 e.printStackTrace();
@@ -208,7 +212,7 @@ public class Migration3 {
                         MutationBatch batch = dstKeyspace.prepareMutationBatch();
                         ColumnListMutation<Long> mutation = batch.withRow(columnFamily,locatorLongRow.getKey());
 
-                        for (int i = 0; i < stopPoint+1; i++) {
+                        for (int i = 0; i < stopPoint + 1; i++) {
                             if (ttl != NONE) {
                                 // ttl will either be the safety value or the difference between the safety value and the age of the column.
                                 int ttlSeconds = ttl == RENEW ? safetyTtlInSeconds : (safetyTtlInSeconds - nowInSeconds + (int)(srcCols.getColumnByIndex(i).getName()/1000));
@@ -309,7 +313,7 @@ public class Migration3 {
                 ex.printStackTrace(out);
                 System.exit(-1);
             }
-            out.println("Done successfully");
+            out.println("Done");
             System.exit(1);
         }
     }
@@ -318,7 +322,7 @@ public class Migration3 {
         if (x.size() != y.size()) {
             throw new Exception("source and destination column lengths do not match");
         }
-        /*
+        /* Its ok to have different column names
         if (Sets.difference(new HashSet<Long>(x.getColumnNames()), new HashSet<Long>(y.getColumnNames())).size() != 0) {
             throw new Exception("source and destination did not contain the same column names");
         }*/

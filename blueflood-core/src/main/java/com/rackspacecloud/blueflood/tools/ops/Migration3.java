@@ -231,11 +231,14 @@ public class Migration3 {
                             if (stopPoint + 1 > 0 && random.nextFloat() < verifyPercent) {
                                 verifyExecutor.submit(new Runnable() {public void run() {
                                     try {
-                                        ColumnList<Long> srcData = srcKeyspace.prepareQuery(columnFamily).getKey(locatorLongRow.getKey())
+                                        ColumnList<Long> srcData = srcKeyspace.prepareQuery(columnFamily)
+                                                .getKey(locatorLongRow.getKey())
                                                 .withColumnRange(range)
                                                 .execute()
                                                 .getResult();
-                                        ColumnList<Long> dstData = dstKeyspace.prepareQuery(columnFamily).getKey(locatorLongRow.getKey())
+                                        ColumnList<Long> dstData = dstKeyspace.prepareQuery(columnFamily)
+                                                .setConsistencyLevel(ConsistencyLevel.CL_QUORUM)
+                                                .getKey(locatorLongRow.getKey())
                                                 .withColumnRange(range)
                                                 .execute()
                                                 .getResult();

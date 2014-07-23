@@ -192,7 +192,7 @@ public class Migration3 {
                                     return;
                                 } else if (stopPoint >= 0 && existingDataSize >= 0) {
                                     out.println(String.format("We have been double writing for some time, what this means is that there is no overlap at the end for some values. Locator: %s", locatorLongRow.getKey()));
-                                    stopAll.set(true);
+                                    //stopAll.set(true);
                                     return;
                                 } else {
                                     out.println(String.format("Copying data for %s, %d ---> %d", locatorLongRow.getKey(), stopPoint, existingDataSize));

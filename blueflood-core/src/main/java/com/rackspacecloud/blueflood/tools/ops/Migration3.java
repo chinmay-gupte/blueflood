@@ -154,6 +154,11 @@ public class Migration3 {
                     return true;
                 }
 
+                if (!locatorLongRow.getKey().toString().contains("rackspace.monitoring")) {
+                    out.println(String.format("Old style locator found. Not migrating", locatorLongRow.getKey()));
+                    return true;
+                }
+
                 destWriteExecutor.submit(new Runnable() {
                     public void run() {
                         if (stopAll.get())

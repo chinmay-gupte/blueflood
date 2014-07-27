@@ -155,7 +155,7 @@ public class Migration3 {
                 }
 
                 if (!locatorLongRow.getKey().toString().contains("rackspace.monitoring")) {
-                    out.println(String.format("Old style locator found. Not migrating", locatorLongRow.getKey()));
+                    out.println(String.format("Old style locator found. Not migrating %s", locatorLongRow.getKey()));
                     return true;
                 }
 
@@ -172,6 +172,7 @@ public class Migration3 {
                             try {
                                 ColumnList<Long> query = dstKeyspace
                                         .prepareQuery(CassandraModel.CF_METRICS_STRING)
+                                        .setConsistencyLevel(ConsistencyLevel.CL_QUORUM)
                                         .getKey(locatorLongRow.getKey())
                                         .withColumnRange(range)
                                         .execute()
@@ -179,26 +180,46 @@ public class Migration3 {
 
                                 int existingDataSize = query.size() - 1;
 
-                                while (stopPoint >= 0 && existingDataSize >= 0) {
-                                    if (query.getColumnByIndex(existingDataSize).getStringValue().equals(srcCols.getColumnByIndex(stopPoint).getStringValue())) {
+                                while (stopPoint >= 0 && existingDataSize >= 0) { // Try to get the overlapping point
+                                    if (query.getColumnByIndex(existingDataSize).getStringValue().equals(srcCols.getColumnByIndex(stopPoint).getStringValue()) ||
+                                            (!query.getColumnByIndex(existingDataSize).hasValue() && !srcCols.getColumnByIndex(stopPoint).hasValue())) {
                                         stopPoint--;
+                                        existingDataSize--;
+                                    } else if (existingDataSize >=0 && query.size() > 1 && (query.getColumnByIndex(existingDataSize + 1).getStringValue().equals(query.getColumnByIndex(existingDataSize).getStringValue()) ||
+                                            (!query.getColumnByIndex(existingDataSize + 1).hasValue() && !query.getColumnByIndex(existingDataSize).hasValue()))) { // Multiple cols for same values might have been written
+                                        out.println(String.format("Unoptimized data in dst for %s at index %d", locatorLongRow.getKey(), existingDataSize));
                                         existingDataSize--;
                                     }
                                     else
                                         break;
                                 }
 
-                                if (stopPoint == -1 && existingDataSize >= 0) {
-                                    out.println(String.format("This is impossible as we have been ingesting in dcass for a loooong time. Locator: %s", locatorLongRow.getKey()));
-                                    stopAll.set(true);
+                                // all cols in src CF have been exhausted, but duplicate cols for first value
+                                while (stopPoint == -1 && existingDataSize >= 0) {
+                                    out.println(String.format("Checking unoptimized for %s", locatorLongRow.getKey()));
+                                    if (query.size() > 1 && (query.getColumnByIndex(existingDataSize + 1).getStringValue().equals(query.getColumnByIndex(existingDataSize).getStringValue())
+                                         || (!query.getColumnByIndex(existingDataSize + 1).hasValue() && !query.getColumnByIndex(existingDataSize).hasValue()))) {
+                                        existingDataSize--;
+                                        out.println(String.format("Unoptimized edge case %s %d", locatorLongRow.getKey(), existingDataSize));
+                                    }
+                                    else
+                                        break;
+                                }
+
+
+                                if (stopPoint == -1 && existingDataSize >= 0) { // Nothing to copy. Think about it.
+                                    if (existingDataSize == 0) {
+                                        out.println(String.format("Unique corner case. That is it. Locator: %s %d", locatorLongRow.getKey(), existingDataSize));
+                                        return;
+                                    }
+                                    out.println(String.format("This is impossible as we have been ingesting in dcass for a loooong time. Locator: %s %d", locatorLongRow.getKey(), existingDataSize));
                                     return;
                                 } else if (stopPoint == -1 && existingDataSize == -1) {
                                     out.println(String.format("All cols already exist. Nothing to copy %s", locatorLongRow.getKey()));
                                     return;
                                 } else if (stopPoint >= 0 && existingDataSize >= 0) {
-                                    out.println(String.format("We have been double writing for some time, what this means is that there is no overlap at the end for some values. Locator: %s", locatorLongRow.getKey()));
-                                    //stopAll.set(true);
-                                    return;
+                                    out.println(String.format("No overlap at the end for some values. Copying %s anyways, %d ---> %d", locatorLongRow.getKey(), stopPoint, existingDataSize));
+                                    //return;
                                 } else {
                                     out.println(String.format("Copying data for %s, %d ---> %d", locatorLongRow.getKey(), stopPoint, existingDataSize));
                                 }
@@ -242,13 +263,12 @@ public class Migration3 {
                                                 .execute()
                                                 .getResult();
                                         ColumnList<Long> dstData = dstKeyspace.prepareQuery(columnFamily)
-                                                .setConsistencyLevel(ConsistencyLevel.CL_QUORUM)
                                                 .getKey(locatorLongRow.getKey())
                                                 .withColumnRange(range)
                                                 .execute()
                                                 .getResult();
 
-                                        checkSameResults(srcData, dstData);
+                                        checkSameResults(locatorLongRow.getKey().toString(), srcData, dstData);
                                         out.println(String.format("Verified migration for %s", locatorLongRow.getKey()));
                                     } catch (ConnectionException ex) {
                                         out.println("There was an error verifying data: " + ex.getMessage());
@@ -256,7 +276,7 @@ public class Migration3 {
                                         stopAll.set(true);
                                     } catch (Exception ex) {
                                         out.println("Exception encountered while verifying data: " + ex.getMessage() + " " + locatorLongRow.getKey().toString());
-                                        stopAll.set(true);
+                                        //stopAll.set(true);
                                     }
                                 }});
                             }
@@ -326,26 +346,58 @@ public class Migration3 {
         }
     }
 
-    private static void checkSameResults(ColumnList<Long> x, ColumnList<Long> y) throws Exception {
+    private static void checkSameResults(String locator, ColumnList<Long> x, ColumnList<Long> y) throws Exception {
+        /*
         if (x.size() != y.size()) {
             throw new Exception("source and destination column lengths do not match");
-        }
+        }*/
         /* Its ok to have different column names
         if (Sets.difference(new HashSet<Long>(x.getColumnNames()), new HashSet<Long>(y.getColumnNames())).size() != 0) {
             throw new Exception("source and destination did not contain the same column names");
         }*/
 
-        for (int i = 0; i < x.size(); i++) {
-            byte[] bx = x.getColumnByIndex(i).getByteArrayValue();
-            byte[] by = y.getColumnByIndex(i).getByteArrayValue();
-            if (bx.length != by.length) {
-                throw new Exception("source and destination column values did not match for column " + i);
+        int srcColCount = 0;
+
+        for (int i = 0; i < y.size(); i++) {
+
+            if (!x.getColumnByIndex(srcColCount).hasValue() && !y.getColumnByIndex(i).hasValue()) {
+                out.println(String.format("No values present for %s at index %d", locator, i));
+                continue;
             }
-            // only examine every third byte.
-            for (int j = 0; j < bx.length; j+=3) {
-                if (bx[j] != by[j]) {
-                    throw new Exception("source and destination column values did not match for column " + i);
+
+            byte[] bx = x.getColumnByIndex(srcColCount).getByteArrayValue();
+            byte[] by = y.getColumnByIndex(i).getByteArrayValue();
+
+            try {
+                checkBytes(bx, by);
+                srcColCount++;
+            } catch (Exception e) {
+                out.println(String.format("Verification failed for locator %s at index %d. Retrying for unoptimized data in dst...", locator, i));
+                if (i>0) {
+                    try {
+                        checkBytes(y.getColumnByIndex(i).getByteArrayValue(), y.getColumnByIndex(i-1).getByteArrayValue());
+                        out.println(String.format("Retry successful for locator %s at index %d. Continuing...", locator, i));
+                        continue;
+                    } catch (Exception ex) {
+                        out.println(String.format("Retry failed for locator %s at index %d. Bailing out...", locator, i));
+                        throw e;
+                    }
+                } else {
+                    out.println(String.format("Verification failed for the first col %s. Bailing out...", locator));
+                    throw e;
                 }
+            }
+        }
+    }
+
+    private static void checkBytes (byte[] bx, byte[] by) throws Exception{
+        if (bx.length != by.length) {
+            throw new Exception("source and destination column lengths did not match for column ");
+        }
+        // only examine every third byte.
+        for (int j = 0; j < bx.length; j+=3) {
+            if (bx[j] != by[j]) {
+                throw new Exception("source and destination column values did not match for column ");
             }
         }
     }

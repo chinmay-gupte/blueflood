@@ -29,6 +29,8 @@ The tool has 2 parts:
 
 ##### RangeDownloader Configuration Options
 
+NOTE: All these settings need to be supplied in the blueflood config file which we use while running these tools. It helps to inherit a lot of settings like cassandra connection pool settings
+
    1. Cloud Files specific credentials like username, apikey, provider, zone and container to give the RangeDownloader the exact location in Rackspace Cloud Files to start grabbing data from
    1. `DOWNLOAD_DIR` -  specifies the location where you want to store the cloud files which are grabbed by RangeDownloader. Note that       this location will also be used later by the OutOfBandRollup.
    1. `BATCH_SIZE` - specified the the number of files which get fetched concurrently from the Cloud Files. This also determines the number of metrics from these files that get parsed by OutOfBandRollup in memory while calculating rollups on the fly, so determine the memory usage of the rollup generating process
@@ -51,9 +53,9 @@ The tool has 2 parts:
 ##### OutOfBandRollups Configuration Options
 
    1. `SHARDS_TO_BACKFILL` - will backfill metrics belonging to only the supplied shards.
+   2. `NUMBER_OF_BUFFERRED_SLOTS` - number of complete+incomplete slots to be kept in memory, once this number gets exceeded the head slots are grabbed, rollups calculated and pushed into cassandra.
    
-    NOTE: All these settings need to be supplied in the blueflood config file which we use while running these tools. It helps to inherit a lot of settings like cassandra connection pool settings
-
+    
 ## Examples:
 
 1. RangeDownloader:

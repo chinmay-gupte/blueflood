@@ -132,7 +132,11 @@ public enum CoreConfig implements ConfigDefaults {
     METADATA_CACHE_PERSISTENCE_ENABLED("false"),
     METADATA_CACHE_PERSISTENCE_PATH("/dev/null"),
     METADATA_CACHE_PERSISTENCE_PERIOD_MINS("10"),
-    META_CACHE_RETENTION_IN_MINUTES("10");
+    META_CACHE_RETENTION_IN_MINUTES("10"),
+
+    DROP_SLOTS_BEYOND_TS("1412971200000"), //10/10/2014 01:00:00 PM PDT
+
+    APPLY_ROLLUP_PATCH("false");
 
     static {
         Configuration.getInstance().loadDefaults(CoreConfig.values());

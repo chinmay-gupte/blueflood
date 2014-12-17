@@ -33,8 +33,8 @@ public enum BackFillerConfig implements ConfigDefaults {
     ROLLUP_DIR("/tmp/metrics_rollup_prod"),
 
     // TODO: In order to account for back pressure, we will need to give a buffer window around the replay period * I think *
-    REPLAY_PERIOD_START("1400122800000"),
-    REPLAY_PERIOD_STOP("1400612400000"),
+    REPLAY_PERIOD_START("1418130025000"),
+    REPLAY_PERIOD_STOP("1418158825000"),
 
     NUMBER_OF_BUFFERRED_SLOTS("3"),
 

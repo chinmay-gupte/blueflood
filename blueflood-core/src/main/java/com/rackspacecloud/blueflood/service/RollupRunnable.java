@@ -97,7 +97,7 @@ public class RollupRunnable implements Runnable {
             Points input;
             Rollup rollup = null;
             RollupType rollupType;
-            if (Configuration.getInstance().getBooleanProperty(CoreConfig.APPLY_ROLLUP_TYPE_PATCH)) {
+            if (Configuration.getInstance().getBooleanProperty(CoreConfig.BYPASS_ROLLUP_TYPE_CACHE)) {
                 rollupType = RollupType.BF_BASIC;
             } else {
                 rollupType = RollupType.fromString(rollupTypeCache.get(

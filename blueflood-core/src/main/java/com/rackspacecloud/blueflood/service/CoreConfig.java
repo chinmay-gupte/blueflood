@@ -137,7 +137,9 @@ public enum CoreConfig implements ConfigDefaults {
     // how long we typically wait to schedule a rollup.
     ROLLUP_DELAY_MILLIS("300000"),
     STRING_METRICS_DROPPED("false"),
-    TENANTIDS_TO_KEEP("");
+    TENANTIDS_TO_KEEP(""),
+
+    APPLY_ROLLUP_TYPE_PATCH("false");
 
     static {
         Configuration.getInstance().loadDefaults(CoreConfig.values());

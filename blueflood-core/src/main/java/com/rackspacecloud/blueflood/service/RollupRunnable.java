@@ -96,14 +96,24 @@ public class RollupRunnable implements Runnable {
             // Read data and compute rollup
             Points input;
             Rollup rollup = null;
-            RollupType rollupType = RollupType.fromString((String) rollupTypeCache.get(
-                    singleRollupReadContext.getLocator(), MetricMetadata.ROLLUP_TYPE.name().toLowerCase()));
+            RollupType rollupType;
+            if (Configuration.getInstance().getBooleanProperty(CoreConfig.APPLY_ROLLUP_TYPE_PATCH)) {
+                rollupType = RollupType.BF_BASIC;
+            } else {
+                rollupType = RollupType.fromString(rollupTypeCache.get(
+                        singleRollupReadContext.getLocator(), MetricMetadata.ROLLUP_TYPE.name().toLowerCase()));
+            }
             Class<? extends Rollup> rollupClass = RollupType.classOf(rollupType, srcGran.coarser());
             ColumnFamily<Locator, Long> srcCF = CassandraModel.getColumnFamily(rollupClass, srcGran);
             ColumnFamily<Locator, Long> dstCF = CassandraModel.getColumnFamily(rollupClass, srcGran.coarser());
 
             try {
                 // first, get the points.
+                /*
+                Because we assumed the rollup type to be BF_BASIC, this read will return zero points for pre-aggregated
+                metrics. But because pre-aggregated are just a tiny fraction of our total ingress, we can see the
+                trade-off when we take into account the gains incurred by saving the metadata operations
+                */
                 input = AstyanaxReader.getInstance().getDataToRoll(rollupClass,
                         singleRollupReadContext.getLocator(), singleRollupReadContext.getRange(), srcCF);
 

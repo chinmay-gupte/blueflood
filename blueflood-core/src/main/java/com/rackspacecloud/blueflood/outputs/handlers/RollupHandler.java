@@ -35,9 +35,7 @@ import org.slf4j.LoggerFactory;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.concurrent.Callable;
-import java.util.concurrent.Executors;
-import java.util.concurrent.Future;
+import java.util.concurrent.*;
 
 public class RollupHandler {
     private static final Logger log = LoggerFactory.getLogger(RollupHandler.class);
@@ -55,6 +53,7 @@ public class RollupHandler {
     protected final Histogram numFullPointsReturned = Metrics.histogram(RollupHandler.class, "Full res points returned");
     protected final Histogram numRollupPointsReturned = Metrics.histogram(RollupHandler.class, "Rollup points returned");
     protected final Histogram numHistogramPointsReturned = Metrics.histogram(RollupHandler.class, "Histogram points returned");
+    protected final Integer ESTimeoutUnit = 5;
 
     private static final boolean ROLLUP_REPAIR = Configuration.getInstance().getBooleanProperty(CoreConfig.REPAIR_ROLLUPS_ON_READ);
 
@@ -92,10 +91,14 @@ public class RollupHandler {
 
         if (unitFuture != null) {
             try {
-                unit = unitFuture.get();
-            } catch (Exception e) {
+                unit = unitFuture.get(ESTimeoutUnit, TimeUnit.SECONDS);
+            } catch (ExecutionException e) {
                 log.warn("Exception encountered while getting unit from ES, unit will be set to unknown in query results");
                 log.debug(e.getMessage(), e);
+            } catch (InterruptedException e) {
+                log.warn("Thread interrupted while waiting for unit from ES");
+            } catch (TimeoutException e) {
+                log.warn(String.format("Exceeded timeout of %s seconds while waiting for getting units out of ES"), ESTimeoutUnit);
             }
             metricData.setUnit(unit == null ? Util.UNKNOWN : unit);
         }

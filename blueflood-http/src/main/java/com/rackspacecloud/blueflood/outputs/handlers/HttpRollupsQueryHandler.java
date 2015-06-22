@@ -55,6 +55,7 @@ public class HttpRollupsQueryHandler extends RollupHandler
     private final Gson gson;           // thread-safe
     private final JsonParser parser;   // thread-safe
     private final Timer httpMetricsFetchTimer = Metrics.timer(HttpRollupsQueryHandler.class,
+
             "Handle HTTP request for metrics");
 
     public HttpRollupsQueryHandler() {

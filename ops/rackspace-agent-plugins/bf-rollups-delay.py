@@ -82,6 +82,10 @@ def _get_slot_for_time(now_millis, gran):
     return (GRAN_MAPPINGS[gran]['max_slots'] * full_slot) / SLOTS
 
 
+def _get_average(list_of_numbers):
+    return float(sum(list_of_numbers)) / len(list_of_numbers)
+
+
 def print_stats_for_metrics_state(metrics_state_for_shards):
     delayed_slots = defaultdict(lambda: defaultdict(lambda: defaultdict(dict)))
     now = int(time.time() * 1000)
@@ -102,20 +106,35 @@ def print_stats_for_metrics_state(metrics_state_for_shards):
                     delayed_slots[
                         resolution][shard][slot] = current_slot - slot
 
-    output = {}
+    max_output = {}
+    avg_output = {}
     for resolution in GRAN_MAPPINGS.keys():
         across_shards_most_delay = []
+        across_shards_avg_delay = []
         for shard in delayed_slots[resolution].keys():
-            max_delay = max(delayed_slots[resolution][shard].values())
+            delayed_slots_list = delayed_slots[resolution][shard].values()
+            max_delay = max(delayed_slots_list)
             # print 'Most delay: %d, Res: %s' % (float(max_delay/(1000*60)),
             #                                    resolution)
+
             across_shards_most_delay.append(max_delay)
+            avg_delay_per_shard_per_gran = _get_average(delayed_slots_list)
+            across_shards_avg_delay.append(avg_delay_per_shard_per_gran)
+            # print 'Shard %s has %i delayed slots for granularity %s' %
+            #                (shard, avg_delay_per_shard_per_gran, resolution)
 
         if (len(across_shards_most_delay)):
-            output[resolution] = max(across_shards_most_delay)
+            max_output[resolution] = max(across_shards_most_delay)
+        if (len(across_shards_avg_delay)):
+            avg_output[resolution] = _get_average(across_shards_avg_delay)
 
-    for resol, delay in output.items():
-        print 'metric %s float %f slots' % ('_'.join([resol, 'delay']), delay)
+    for resol, delay in max_output.items():
+        print 'metric %s float %f slots' % ('_'.join([resol, 'max_delay']),
+                                            delay)
+
+    for resol, delay in avg_output.items():
+        print 'metric %s float %f slots' % ('_'.join([resol, 'avg_delay']),
+                                            delay)
 
 
 def main(servers):
